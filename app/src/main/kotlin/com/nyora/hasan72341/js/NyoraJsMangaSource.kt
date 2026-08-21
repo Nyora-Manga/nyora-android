@@ -9,8 +9,7 @@ import java.util.Locale
  * A JS-bundle parser exposed as a first-class [MangaSource] (mirrors `MihonMangaSource`).
  *
  * [jsId] is the raw id the bundle's `NyoraParsers.getParser(id)` expects (e.g. "DANKE");
- * [name] is namespaced "JS_<id>" so it can't collide with native `MangaParserSource` names
- * and is recognised by the repository factory + source rehydration.
+ * [name] is the canonical portable catalogue identity persisted by every new write.
  */
 data class NyoraJsMangaSource(
     val jsId: String,
@@ -22,7 +21,7 @@ data class NyoraJsMangaSource(
 	val portableName: String
 		get() = "data:" + jsId.lowercase(Locale.ROOT).replace('_', '-')
 
-    override val name: String get() = "JS_$jsId"
+    override val name: String get() = portableName
 
     override val contentType: ContentType
         get() = if (nsfw) ContentType.HENTAI_MANGA else ContentType.MANGA

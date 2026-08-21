@@ -259,8 +259,11 @@ object NyoraBackupCodec {
         val categoryIds = snapshot.categories.map { it.id }.toSet()
         unique(snapshot.sources.map { it.id }, "source")
         unique(snapshot.categories.map { it.id }, "category")
+        unique(snapshot.preferences.map { it.id }, "preference")
         unique(snapshot.manga.map { it.id }, "manga")
         unique(snapshot.chapters.map { it.id }, "chapter")
+        unique(snapshot.library.map { it.id }, "library")
+        unique(snapshot.history.map { it.id }, "history")
         unique(snapshot.bookmarks.map { it.id }, "bookmark")
         unique(snapshot.tracking.map { it.id }, "tracking")
         snapshot.manga.forEach {

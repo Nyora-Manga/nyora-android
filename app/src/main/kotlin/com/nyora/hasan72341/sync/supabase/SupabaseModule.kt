@@ -22,5 +22,6 @@ object SupabaseModule {
         database: MangaDatabase,
         @BaseHttpClient http: OkHttpClient,
         config: SupabaseConfig,
-    ): SupabaseSync = SupabaseSync(context, database, http, config)
+        barrier: SupabaseSyncBarrier,
+    ): SupabaseSync = SupabaseSync(context, database, http, config, barrier)
 }

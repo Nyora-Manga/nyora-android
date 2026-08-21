@@ -23,6 +23,7 @@ class SupabaseSync @Inject constructor(
     private val database: MangaDatabase,
     @BaseHttpClient private val http: OkHttpClient,
     private val config: SupabaseConfig,
+    private val barrier: SupabaseSyncBarrier,
 ) {
     private val historyDao get() = database.getHistoryDao()
     private val favouritesDao get() = database.getFavouritesDao()
@@ -128,7 +129,7 @@ class SupabaseSync @Inject constructor(
 
     // -- Push --
 
-    suspend fun syncNow() = withContext(Dispatchers.IO) {
+    suspend fun syncNow() = barrier.withSync { withContext(Dispatchers.IO) {
         if (!config.isAuthenticated) {
             android.util.Log.w("SupabaseSync", "syncNow: not authenticated")
             return@withContext
@@ -143,20 +144,20 @@ class SupabaseSync @Inject constructor(
         pushAll(cutoff)
         pullAll(if (isBootstrap) SupabaseConfig.INITIAL_SYNC_TIMESTAMP else config.lastSyncTimestamp)
         android.util.Log.d("SupabaseSync", "syncNow: complete")
-    }
+    } }
 
-    suspend fun restoreFromCloud() = withContext(Dispatchers.IO) {
+    suspend fun restoreFromCloud() = barrier.withSync { withContext(Dispatchers.IO) {
         if (!config.isAuthenticated) return@withContext
         if (!refreshTokenIfExpired()) return@withContext
         pullAll(SupabaseConfig.INITIAL_SYNC_TIMESTAMP)
-    }
+    } }
 
-    suspend fun pushAll() = withContext(Dispatchers.IO) {
+    suspend fun pushAll() = barrier.withSync { withContext(Dispatchers.IO) {
         if (!config.isAuthenticated) return@withContext
         if (!refreshTokenIfExpired()) return@withContext
         val cutoff = parseEpochMilli(config.lastSyncTimestamp)
         pushAll(cutoff)
-    }
+    } }
 
     private suspend fun pushAll(cutoff: Long) {
         pushFavourites(cutoff)

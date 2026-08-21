@@ -215,6 +215,19 @@ class NyoraBackupCodecValidationTest {
         }
     }
 
+    @Test
+    fun `rejects duplicate preference library and history identities`() {
+        listOf(
+            snapshot.copy(preferences = snapshot.preferences + snapshot.preferences.single()),
+            snapshot.copy(library = snapshot.library + snapshot.library.single()),
+            snapshot.copy(history = snapshot.history + snapshot.history.single()),
+        ).forEach { duplicate ->
+            assertFailsWith<NyoraBackupCodec.InvalidBackupException> {
+                NyoraBackupCodec.encode(duplicate)
+            }
+        }
+    }
+
     private fun zipOf(vararg entries: Pair<String, ByteArray>): ByteArray = ByteArrayOutputStream().use { output ->
         val offsets = mutableListOf<Int>()
         entries.forEach { (name, content) ->

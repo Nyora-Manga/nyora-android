@@ -95,8 +95,8 @@ class RestoreDialogFragment : AlertDialogFragment<DialogRestoreBinding>(), View.
 
 	private fun startRestoreService(): Boolean {
 		val context = context ?: return false
-		val uri = viewModel.uri ?: return false
-		return RestoreService.start(context, uri, viewModel.restoreRequest())
+		val payload = viewModel.preparedPayload ?: return false
+		return RestoreService.start(context, payload, viewModel.restoreRequest())
 	}
 
 	private fun Date.formatBackupDate(): String = getString(

@@ -12,13 +12,17 @@ import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.FlowCollector
+import com.nyora.hasan72341.sync.supabase.SupabaseSyncBarrier
 
 @Singleton
 class BackupRepository @Inject constructor(
 	database: MangaDatabase,
 	mangaSourcesRepository: MangaSourcesRepository,
 	backupObserver: BackupObserver,
+	syncBarrier: SupabaseSyncBarrier,
+	cloudSyncReconciler: WorkManagerNyoraCloudSyncReconciler,
 ) {
+	private val restoreSyncCoordinator = NyoraRestoreSyncCoordinator(syncBarrier, cloudSyncReconciler)
 	private val projector = NyoraRoomBackupProjector(database, BuildConfig.VERSION_NAME)
 	private val delegate = NyoraRoomBackupRepository(
 		database = database,
@@ -50,7 +54,8 @@ class BackupRepository @Inject constructor(
 		progress: FlowCollector<Progress>? = null,
 	): NyoraRestoreResult {
 		progress?.emit(Progress.INDETERMINATE)
-		val result = delegate.apply(NyoraBackupStreams.read(input), request.mode)
+		val bytes = NyoraBackupStreams.read(input)
+		val result = restoreSyncCoordinator.restore { delegate.apply(bytes, request.mode) }
 		progress?.emit(Progress(1, 1))
 		return result
 	}

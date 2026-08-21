@@ -35,7 +35,7 @@ class NyoraJsSourcesManager @Inject constructor(
 
     private val sources: List<NyoraJsMangaSource> by lazy { load() }
     private val byName: Map<String, NyoraJsMangaSource> by lazy { sources.associateBy { it.name } }
-    private val byPortableName: Map<String, NyoraJsMangaSource> by lazy { sources.associateBy { it.portableName } }
+    private val byLegacyName: Map<String, NyoraJsMangaSource> by lazy { sources.associateBy { "JS_${it.jsId}" } }
 
     private fun load(): List<NyoraJsMangaSource> = runCatching {
         val text = otaUpdater.sources()
@@ -53,5 +53,5 @@ class NyoraJsSourcesManager @Inject constructor(
 
     fun getJsMangaSources(): List<NyoraJsMangaSource> = sources
 
-    fun getByName(name: String): NyoraJsMangaSource? = byName[name] ?: byPortableName[name]
+    fun getByName(name: String): NyoraJsMangaSource? = byName[name] ?: byLegacyName[name]
 }

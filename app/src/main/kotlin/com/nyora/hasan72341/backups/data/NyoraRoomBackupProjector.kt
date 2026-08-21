@@ -29,18 +29,19 @@ class NyoraRoomBackupProjector(
 			canonicalByLocalId.values.map { it.sourceId }).toSortedSet()
 		val categoryRows = database.getFavouriteCategoriesDao().findAllForSync()
 		val identityMap = database.getNyoraBackupIdentityMapDao()
-		val categories = categoryRows.map { row ->
+		val categoryProjections = categoryRows.filterNot { it.title == UNCATEGORIZED_CATEGORY_TITLE }.map { row ->
 			val portableId = identityMap.findPortableId("category", row.categoryId.toString())
 				?: portableUuid("category", row.categoryId.toString())
-			NyoraBackupCategory(
+			row.categoryId.toLong() to NyoraBackupCategory(
 				id = portableId,
 				title = row.title,
 				sortOrder = row.sortKey,
 				updatedAt = timestamp(maxOf(row.createdAt, row.deletedAt)),
 				deletedAt = row.deletedAt.takeIf { it > 0 }?.let(::timestamp),
 			)
-		}.sortedBy { it.id }
-		val categoryByLocalId = categories.zip(categoryRows).associate { (portable, local) -> local.categoryId.toLong() to portable.id }
+		}
+		val categories = categoryProjections.map { it.second }.sortedBy { it.id }
+		val categoryByLocalId = categoryProjections.associate { (localId, portable) -> localId to portable.id }
 		val favourites = database.getFavouritesDao().findAllForBackup()
 		val liveFavourites = favourites.filter { it.deletedAt == 0L && canonicalByLocalId.containsKey(it.mangaId) }
 		val manga = canonicalByLocalId.values.map { projection ->
@@ -115,7 +116,7 @@ class NyoraRoomBackupProjector(
 			val service = ScrobblerService.entries.firstOrNull { it.id == row.scrobbler }?.name?.lowercase()
 				?: return@mapNotNull null
 			NyoraBackupTracking(
-				id = "$service:${row.targetId}",
+				id = identityMap.findPortableId("tracking:$service", row.id.toString()) ?: "$service:${row.targetId}",
 				mangaId = projection.portableId,
 				service = service,
 				status = row.status?.lowercase()?.replace('_', '-')?.takeIf { it.matches(Regex("[a-z][a-z0-9-]*")) } ?: "reading",
@@ -174,6 +175,7 @@ class NyoraRoomBackupProjector(
 	)
 
 	private companion object {
+		const val UNCATEGORIZED_CATEGORY_TITLE = "\u0000nyora-uncategorized"
 		val TIMESTAMP_FORMAT: DateTimeFormatter = DateTimeFormatter
 			.ofPattern("uuuu-MM-dd'T'HH:mm:ss.SSS'Z'")
 			.withZone(ZoneOffset.UTC)

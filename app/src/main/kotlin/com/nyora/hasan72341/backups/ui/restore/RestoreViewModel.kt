@@ -8,6 +8,7 @@ import com.nyora.hasan72341.backups.data.NyoraRestorePlan
 import com.nyora.hasan72341.backups.data.NyoraBackupStreams
 import com.nyora.hasan72341.backups.domain.NyoraBackupFiles
 import com.nyora.hasan72341.backups.domain.NyoraRestoreRequest
+import com.nyora.hasan72341.backups.domain.NyoraRestorePayloadStore
 import com.nyora.hasan72341.core.nav.AppRouter
 import com.nyora.hasan72341.core.ui.BaseViewModel
 import com.nyora.hasan72341.core.util.ext.getFileDisplayName
@@ -16,6 +17,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.ByteArrayInputStream
 import java.io.FileNotFoundException
+import java.io.File
 import java.time.Instant
 import java.util.Date
 import javax.inject.Inject
@@ -34,7 +36,10 @@ class RestoreViewModel @Inject constructor(
 	val backupDate = MutableStateFlow<Date?>(null)
 
 	private val contentResolver = context.contentResolver
+	private val payloadStore = NyoraRestorePayloadStore(File(context.cacheDir, RESTORE_PAYLOAD_DIRECTORY))
 	private var archiveBytes: ByteArray? = null
+	var preparedPayload: File? = null
+		private set
 	private var replaceConfirmed = false
 
 	init {
@@ -43,6 +48,7 @@ class RestoreViewModel @Inject constructor(
 			NyoraBackupFiles.requireSupported(contentResolver.getFileDisplayName(source))
 			archiveBytes = checkNotNull(contentResolver.openInputStream(source)).use(NyoraBackupStreams::read)
 			replan(NyoraRestoreMode.Merge)
+			preparedPayload = payloadStore.prepare(checkNotNull(archiveBytes))
 		}
 	}
 
@@ -64,5 +70,9 @@ class RestoreViewModel @Inject constructor(
 		mode.value = selectedMode
 		plan.value = preview
 		backupDate.value = Date.from(Instant.parse(preview.createdAt))
+	}
+
+	companion object {
+		const val RESTORE_PAYLOAD_DIRECTORY = "nyora-restore"
 	}
 }

@@ -20,13 +20,17 @@ class NyoraRoomPortableMaterializer(
 	override suspend fun replace(snapshot: NyoraBackupSnapshot) {
 		val sql = database.openHelper.writableDatabase
 		val now = System.currentTimeMillis()
-		sql.execSQL("DELETE FROM sources WHERE source LIKE 'data:%' OR source LIKE 'MIHON_%' OR source LIKE 'mihon:%' OR source GLOB '[0-9]*'")
+		sql.execSQL("DELETE FROM sources WHERE source LIKE 'data:%' OR source LIKE 'JS_%' OR source LIKE 'MIHON_%' OR source LIKE 'mihon:%' OR source GLOB '[0-9]*'")
 		snapshot.sources.filter { it.deletedAt == null }.forEachIndexed { index, source ->
 			database.getSourcesDao().upsert(
 				MangaSourceEntity(source.id, source.installed, index, 0, 0L, source.pinned, 0),
 			)
 		}
 		val chaptersByManga = snapshot.chapters.filter { it.deletedAt == null }.groupBy { it.mangaId }
+		// Merge has already produced the complete target, so materialization can replace portable manga atomically.
+		sql.execSQL(
+			"DELETE FROM manga WHERE source LIKE 'data:%' OR source LIKE '%\"data:%' OR source LIKE '%JS_%' OR source LIKE '%MIHON_%' OR source LIKE '%mihon:%' OR source GLOB '[0-9]*' OR source LIKE '{\"name\":\"[0-9]%'",
+		)
 		snapshot.manga.filter { it.deletedAt == null }.forEach { item ->
 			val chapters = chaptersByManga[item.id].orEmpty().mapIndexed { index, chapter ->
 				MangaChapter(
@@ -72,8 +76,26 @@ class NyoraRoomPortableMaterializer(
 			)
 			category.id to localId.toLong()
 		}
+		val uncategorized = snapshot.library.any { it.deletedAt == null && it.categoryIds.isEmpty() }
+		val uncategorizedId = if (uncategorized) {
+			database.getNyoraBackupIdentityMapDao().resolveLocalId("category", UNCATEGORIZED_PORTABLE_ID).also { localId ->
+				database.getFavouriteCategoriesDao().upsert(
+					FavouriteCategoryEntity(
+						categoryId = localId,
+						createdAt = now,
+						sortKey = Int.MAX_VALUE,
+						title = UNCATEGORIZED_CATEGORY_TITLE,
+						order = "MANUAL",
+						track = false,
+						isVisibleInLibrary = false,
+						deletedAt = 0L,
+					),
+				)
+			}.toLong()
+		} else null
 		snapshot.library.filter { it.deletedAt == null }.forEach { item ->
-			item.categoryIds.mapNotNull(categoryIds::get).forEachIndexed { index, categoryId ->
+			val localCategories = item.categoryIds.mapNotNull(categoryIds::get).ifEmpty { listOfNotNull(uncategorizedId) }
+			localCategories.forEachIndexed { index, categoryId ->
 				database.getFavouritesDao().upsert(
 					FavouriteEntity(item.mangaId, categoryId, index, false, millis(item.addedAt), 0L),
 				)
@@ -117,13 +139,13 @@ class NyoraRoomPortableMaterializer(
 		sql.execSQL("DELETE FROM scrobblings")
 		snapshot.tracking.filter { it.deletedAt == null }.forEach { item ->
 			val service = ScrobblerService.entries.firstOrNull { it.name.equals(item.service, true) } ?: return@forEach
-			val remoteId = item.id.substringAfter(':', "0").toLongOrNull() ?: return@forEach
+			val localId = database.getNyoraBackupIdentityMapDao().resolveLocalId("tracking:${item.service.lowercase()}", item.id)
 			database.getScrobblingDao().upsert(
 				ScrobblingEntity(
 					scrobbler = service.id,
-					id = remoteId.toInt(),
+					id = localId,
 					mangaId = item.mangaId,
-					targetId = remoteId,
+					targetId = localId.toLong(),
 					status = item.status,
 					chapter = item.progress?.toInt() ?: 0,
 					comment = null,
@@ -131,9 +153,12 @@ class NyoraRoomPortableMaterializer(
 				),
 			)
 		}
-		// Retired unresolved placeholder manga is not portable and is purged once.
-		sql.execSQL("DELETE FROM manga WHERE source LIKE '%MIHON_%' OR source LIKE '%mihon:%'")
 	}
 
 	private fun millis(timestamp: String): Long = Instant.parse(timestamp).toEpochMilli()
+
+	private companion object {
+		const val UNCATEGORIZED_CATEGORY_TITLE = "\u0000nyora-uncategorized"
+		const val UNCATEGORIZED_PORTABLE_ID = "__nyora_uncategorized__"
+	}
 }

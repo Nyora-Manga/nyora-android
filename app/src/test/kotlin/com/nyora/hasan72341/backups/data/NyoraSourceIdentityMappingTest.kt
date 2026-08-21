@@ -33,5 +33,6 @@ class NyoraSourceIdentityMappingTest {
 		val source = NyoraJsMangaSource("MANGADEX", "MangaDex", "en", "mangadex.org", false)
 
 		assertEquals("data:mangadex", source.portableName)
+		assertEquals("data:mangadex", source.name)
 	}
 }

@@ -221,17 +221,7 @@ abstract class HttpSource : CatalogueSource {
 
     protected abstract fun imageUrlParse(response: Response): String
 
-    private fun tagRequest(request: Request): Request {
-        if (request.tag(ContentSource::class.java) != null) {
-            return request
-        }
-        return request.newBuilder()
-            .tag(
-                ContentSource::class.java,
-                contentSource("MIHON_$id"),
-            )
-            .build()
-    }
+    private fun tagRequest(request: Request): Request = request
 
     // ======== Image request ========
 

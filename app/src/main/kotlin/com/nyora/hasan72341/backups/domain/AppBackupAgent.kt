@@ -9,20 +9,22 @@ import android.os.ParcelFileDescriptor
 import androidx.annotation.VisibleForTesting
 import com.google.common.io.ByteStreams
 import com.nyora.hasan72341.backups.data.BackupRepository
-import com.nyora.hasan72341.core.db.MangaDatabase
-import com.nyora.hasan72341.core.prefs.AppSettings
-import com.nyora.hasan72341.explore.data.MangaSourcesRepository
-import com.nyora.hasan72341.js.NyoraJsSourcesManager
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.io.FileDescriptor
 import java.io.FileInputStream
-import javax.inject.Inject
-import javax.inject.Provider
+
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface AppBackupAgentEntryPoint {
+	fun backupRepository(): BackupRepository
+}
 
 class AppBackupAgent : BackupAgent() {
-	@Inject
-	lateinit var nyoraJsSourcesManager: Provider<NyoraJsSourcesManager>
 
 	override fun onBackup(
 		oldState: ParcelFileDescriptor?,
@@ -37,8 +39,6 @@ class AppBackupAgent : BackupAgent() {
 	) = Unit
 
 	override fun onFullBackup(data: FullBackupDataOutput) {
-		super.onFullBackup(data)
-
 		val file = createBackupFile(
 			this,
 			createRepository(applicationContext),
@@ -91,16 +91,7 @@ class AppBackupAgent : BackupAgent() {
 	}
 
 	private fun createRepository(context: Context): BackupRepository {
-		val database = MangaDatabase(context)
-		return BackupRepository(
-			database = database,
-			backupObserver = BackupObserver(context),
-			mangaSourcesRepository = MangaSourcesRepository(
-				context = context,
-				db = database,
-				settings = AppSettings(context),
-				nyoraJsSourcesManager = nyoraJsSourcesManager.get(),
-			),
-		)
+		return EntryPointAccessors.fromApplication(context, AppBackupAgentEntryPoint::class.java)
+			.backupRepository()
 	}
 }

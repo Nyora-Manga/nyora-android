@@ -68,7 +68,7 @@ class NyoraRoomBackupRepository(
 		mode: NyoraRestoreMode = NyoraRestoreMode.Merge,
 	): NyoraRestorePlan {
 		val incoming = NyoraBackupCodec.decode(bytes)
-		return NyoraRestorePlanner.plan(readSnapshot(), incoming, mode, availableSourceIds())
+		return planAgainstCurrent(incoming, mode)
 	}
 
 	suspend fun apply(
@@ -80,7 +80,7 @@ class NyoraRoomBackupRepository(
 		observerGate.setSuppressed(true)
 		try {
 			database.withTransaction {
-				val plan = NyoraRestorePlanner.plan(readSnapshot(), incoming, mode, availableSourceIds())
+				val plan = planAgainstCurrent(incoming, mode)
 				materializer.replace(plan.preview)
 				val baseline = NyoraBackupCodec.encode(initialSnapshot())
 				database.getNyoraBackupLedgerDao().put(
@@ -96,6 +96,25 @@ class NyoraRoomBackupRepository(
 		return NyoraRestoreResult(
 			plan = plan,
 			applied = plan.sections.mapValues { (_, count) -> count.additions + count.updates + count.deletions },
+		)
+	}
+
+	private suspend fun planAgainstCurrent(
+		incoming: NyoraBackupSnapshot,
+		mode: NyoraRestoreMode,
+	): NyoraRestorePlan {
+		val live = initialSnapshot()
+		val existing = database.getNyoraBackupLedgerDao().get()
+		if (existing == null) return NyoraRestorePlanner.plan(live, incoming, mode, availableSourceIds())
+		return NyoraCurrentRestorePlanner.plan(
+			durable = NyoraBackupCodec.decode(existing.archive),
+			baseline = NyoraBackupCodec.decode(existing.baseline),
+			live = live,
+			incoming = incoming,
+			mode = mode,
+			availableSourceIds = availableSourceIds(),
+			observedAt = TIMESTAMP_FORMAT.format(now()),
+			localArchiveId = newArchiveId().toString().lowercase(),
 		)
 	}
 

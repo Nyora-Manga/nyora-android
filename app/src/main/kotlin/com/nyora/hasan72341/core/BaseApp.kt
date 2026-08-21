@@ -26,7 +26,6 @@ import com.nyora.hasan72341.core.util.ext.processLifecycleScope
 import com.nyora.hasan72341.local.data.LocalStorageChanges
 import com.nyora.hasan72341.local.data.index.LocalMangaIndex
 import com.nyora.hasan72341.local.domain.model.LocalManga
-import com.nyora.hasan72341.mihon.MihonExtensionManager
 import com.nyora.hasan72341.settings.work.WorkScheduleManager
 import com.nyora.hasan72341.sync.supabase.SupabaseConfig
 import kotlinx.coroutines.Dispatchers
@@ -40,9 +39,6 @@ import javax.inject.Provider
 
 @HiltAndroidApp
 open class BaseApp : Application(), Configuration.Provider {
-
-	@Inject
-	lateinit var mihonExtensionManager: MihonExtensionManager
 
 	@Inject
 	lateinit var databaseObserversProvider: Provider<Set<@JvmSuppressWildcards InvalidationTracker.Observer>>
@@ -90,7 +86,6 @@ open class BaseApp : Application(), Configuration.Provider {
 			Security.insertProviderAt(Conscrypt.newProvider(), 1)
 		}
 		setupActivityLifecycleCallbacks()
-		mihonExtensionManager.initialize()
 		processLifecycleScope.launch(Dispatchers.IO) {
 			setupDatabaseObservers()
 			localStorageChanges.collect(localMangaIndexProvider.get())

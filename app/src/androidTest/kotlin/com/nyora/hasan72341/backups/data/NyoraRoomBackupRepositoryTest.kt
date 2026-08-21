@@ -5,10 +5,12 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.util.UUID
+import java.time.Instant
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertArrayEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import com.nyora.hasan72341.core.db.MangaDatabase
@@ -51,7 +53,14 @@ class NyoraRoomBackupRepositoryTest {
 		databaseNames += name
 		val database = database(name)
 		val initial = snapshot("11111111-1111-1111-1111-111111111111", "Initial", "2026-08-20T00:00:00.000Z")
-		NyoraRoomBackupRepository(database, { setOf(SOURCE_ID) })
+		val projector = NyoraRoomBackupProjector(database, "test")
+		val realMaterializer = NyoraRoomPortableMaterializer(database)
+		NyoraRoomBackupRepository(
+			database,
+			{ setOf(SOURCE_ID) },
+			projector::snapshot,
+			realMaterializer,
+		)
 			.apply(NyoraBackupCodec.encode(initial), NyoraRestoreMode.Replace)
 		val events = mutableListOf<String>()
 		val repository = NyoraRoomBackupRepository(
@@ -59,8 +68,10 @@ class NyoraRoomBackupRepositoryTest {
 			availableSourceIds = { setOf(SOURCE_ID) },
 			materializer = NyoraPortableMaterializer {
 				events += "materialize"
+				realMaterializer.replace(it)
 				throw IllegalStateException("injected")
 			},
+			initialSnapshot = projector::snapshot,
 			observerGate = object : NyoraBackupObserverGate {
 				override suspend fun setSuppressed(suppressed: Boolean) {
 					events += if (suppressed) "pause" else "resume"
@@ -83,6 +94,7 @@ class NyoraRoomBackupRepositoryTest {
 		}
 
 		assertEquals(initial, repository.readSnapshot())
+		assertEquals("Initial", database.getFavouriteCategoriesDao().findAllForSync().single().title)
 		assertEquals(listOf("pause", "materialize", "resume"), events)
 		assertTrue(database.isOpen)
 		database.close()
@@ -107,6 +119,142 @@ class NyoraRoomBackupRepositoryTest {
 		database = database(name)
 		assertEquals(first, database.getNyoraBackupIdentityMapDao().resolveLocalId("category", "Aa"))
 		assertEquals(collidingHash, database.getNyoraBackupIdentityMapDao().resolveLocalId("category", "BB"))
+		database.close()
+	}
+
+	@Test
+	fun realProjectorAndMaterializerPreserveCategoryTrackingAndUncategorizedIdentity() = runBlocking {
+		val name = "nyora-backup-${UUID.randomUUID()}"
+		databaseNames += name
+		val database = database(name)
+		val projector = NyoraRoomBackupProjector(database, "test")
+		val repository = NyoraRoomBackupRepository(
+			database = database,
+			availableSourceIds = { setOf(SOURCE_ID) },
+			initialSnapshot = projector::snapshot,
+			materializer = NyoraRoomPortableMaterializer(database),
+		)
+		val laterCategory = "ffffffff-ffff-ffff-ffff-ffffffffffff"
+		val earlierCategory = "00000000-0000-0000-0000-000000000001"
+		val mangaOne = NyoraBackupIdentity.mangaId(SOURCE_ID, "/one")
+		val mangaTwo = NyoraBackupIdentity.mangaId(SOURCE_ID, "/two")
+		val shaTrackingId = "anilist:sha256:9c1185a5c5e9fc54612808977ee8f548b2258d31"
+		val timestamp = "2026-08-21T00:00:00.000Z"
+		val incoming = NyoraBackupSnapshot(
+			archiveId = "44444444-4444-4444-4444-444444444444",
+			createdAt = timestamp,
+			appVersion = "test",
+			platform = "android-test",
+			sources = listOf(NyoraBackupSource(SOURCE_ID, "r1", updatedAt = timestamp)),
+			categories = listOf(
+				NyoraBackupCategory(laterCategory, "Later", 0, timestamp),
+				NyoraBackupCategory(earlierCategory, "Earlier", 1, timestamp),
+			),
+			manga = listOf(
+				NyoraBackupManga(mangaOne, SOURCE_ID, "/one", "One", timestamp),
+				NyoraBackupManga(mangaTwo, SOURCE_ID, "/two", "Two", timestamp),
+			),
+			library = listOf(
+				NyoraBackupLibrary(mangaOne, timestamp, listOf(laterCategory)),
+				NyoraBackupLibrary(mangaTwo, timestamp, emptyList()),
+			),
+			tracking = listOf(
+				NyoraBackupTracking(shaTrackingId, mangaOne, "anilist", "reading", timestamp),
+			),
+		)
+
+		repository.apply(NyoraBackupCodec.encode(incoming), NyoraRestoreMode.Replace)
+		val projected = projector.snapshot()
+
+		assertEquals(listOf(laterCategory), projected.library.single { it.mangaId == mangaOne }.categoryIds)
+		assertEquals(emptyList<String>(), projected.library.single { it.mangaId == mangaTwo }.categoryIds)
+		assertEquals(shaTrackingId, projected.tracking.single().id)
+		assertEquals(2, database.getFavouritesDao().findAllForBackup().size)
+		assertEquals(1, database.getScrobblingDao().findAllForBackup().size)
+		database.close()
+	}
+
+	@Test
+	fun previewAndApplyReconcileLiveRoomAtTheTransactionBoundary() = runBlocking {
+		val name = "nyora-backup-${UUID.randomUUID()}"
+		databaseNames += name
+		val database = database(name)
+		val projector = NyoraRoomBackupProjector(database, "test")
+		val events = mutableListOf<String>()
+		val repository = NyoraRoomBackupRepository(
+			database = database,
+			availableSourceIds = { setOf(SOURCE_ID) },
+			initialSnapshot = projector::snapshot,
+			materializer = NyoraRoomPortableMaterializer(database),
+			observerGate = object : NyoraBackupObserverGate {
+				override suspend fun setSuppressed(suppressed: Boolean) {
+					events += if (suppressed) "pause" else "resume"
+				}
+				override suspend fun reconcile() { events += "reconcile" }
+			},
+			now = { Instant.parse("2026-08-22T00:00:00.000Z") },
+			newArchiveId = { UUID.fromString("33333333-3333-3333-3333-333333333333") },
+		)
+		val imported = snapshot("11111111-1111-1111-1111-111111111111", "Imported", "2026-08-20T00:00:00.000Z")
+		repository.apply(NyoraBackupCodec.encode(imported), NyoraRestoreMode.Replace)
+		events.clear()
+		database.openHelper.writableDatabase.execSQL(
+			"UPDATE favourite_categories SET title = 'Edited locally' WHERE deleted_at = 0",
+		)
+		val ledgerBeforePreview = checkNotNull(database.getNyoraBackupLedgerDao().get()).archive
+		val incoming = snapshot("22222222-2222-2222-2222-222222222222", "Older remote", "2026-08-21T00:00:00.000Z")
+
+		val plan = repository.plan(NyoraBackupCodec.encode(incoming), NyoraRestoreMode.Merge)
+
+		assertEquals("Edited locally", plan.preview.categories.single().title)
+		assertEquals("2026-08-22T00:00:00.000Z", plan.preview.categories.single().updatedAt)
+		assertArrayEquals(ledgerBeforePreview, checkNotNull(database.getNyoraBackupLedgerDao().get()).archive)
+		assertTrue(events.isEmpty())
+		repository.apply(NyoraBackupCodec.encode(incoming), NyoraRestoreMode.Merge)
+		assertEquals(listOf("pause", "resume", "reconcile"), events)
+		assertEquals("Edited locally", database.getFavouriteCategoriesDao().findAllForSync().single().title)
+		database.openHelper.writableDatabase.execSQL(
+			"UPDATE favourite_categories SET deleted_at = ?",
+			arrayOf(Instant.parse("2026-08-23T00:00:00.000Z").toEpochMilli()),
+		)
+		val deletePlan = repository.plan(NyoraBackupCodec.encode(incoming), NyoraRestoreMode.Merge)
+		assertEquals("2026-08-23T00:00:00.000Z", deletePlan.preview.categories.single().deletedAt)
+		repository.apply(NyoraBackupCodec.encode(incoming), NyoraRestoreMode.Merge)
+		assertTrue(database.getFavouriteCategoriesDao().findAllForSync().isEmpty())
+		database.close()
+	}
+
+	@Test
+	fun replaceRemovesPortableRowsThatAreAbsentFromTheTarget() = runBlocking {
+		val name = "nyora-backup-${UUID.randomUUID()}"
+		databaseNames += name
+		val database = database(name)
+		val projector = NyoraRoomBackupProjector(database, "test")
+		val repository = NyoraRoomBackupRepository(
+			database = database,
+			availableSourceIds = { setOf(SOURCE_ID) },
+			initialSnapshot = projector::snapshot,
+			materializer = NyoraRoomPortableMaterializer(database),
+		)
+		val timestamp = "2026-08-21T00:00:00.000Z"
+		val populated = NyoraBackupSnapshot(
+			archiveId = "55555555-5555-5555-5555-555555555555",
+			createdAt = timestamp,
+			appVersion = "test",
+			platform = "android-test",
+			sources = listOf(NyoraBackupSource(SOURCE_ID, "r1", updatedAt = timestamp)),
+			manga = listOf(NyoraBackupManga(NyoraBackupIdentity.mangaId(SOURCE_ID, "/old"), SOURCE_ID, "/old", "Old", timestamp)),
+		)
+		repository.apply(NyoraBackupCodec.encode(populated), NyoraRestoreMode.Replace)
+		assertEquals(1, database.getMangaDao().findAllForBackup().size)
+		val empty = populated.copy(
+			archiveId = "77777777-7777-7777-7777-777777777777",
+			manga = emptyList(),
+		)
+
+		repository.apply(NyoraBackupCodec.encode(empty), NyoraRestoreMode.Replace)
+
+		assertTrue(database.getMangaDao().findAllForBackup().isEmpty())
 		database.close()
 	}
 

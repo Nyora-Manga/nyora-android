@@ -311,7 +311,7 @@ class MangaSourcesRepository @Inject constructor(
 			if (skipNsfwSources && source.isNsfw()) {
 				continue
 			}
-			if (source.name.startsWith("JS_")) {
+			if (source.name.startsWith("data:")) {
 				result.add(
 					MangaSourceInfo(
 						mangaSource = source,

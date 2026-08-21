@@ -262,9 +262,6 @@
 			android:name="com.nyora.hasan72341.settings.sources.catalog.SourcesCatalogActivity"
 			android:label="@string/sources_catalog" />
 		<activity
-			android:name="com.nyora.hasan72341.settings.sources.extension.ExtensionDownloaderActivity"
-			android:label="@string/extensions_manager" />
-		<activity
 			android:name="com.nyora.hasan72341.scrobbling.kitsu.ui.KitsuAuthActivity"
 			android:exported="false"
 			android:label="@string/kitsu"
