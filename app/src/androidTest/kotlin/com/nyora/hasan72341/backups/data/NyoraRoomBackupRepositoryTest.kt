@@ -126,6 +126,73 @@ class NyoraRoomBackupRepositoryTest {
 	}
 
 	@Test
+	fun restoreReservesUnmappedMigratedCategoryIds() = runBlocking {
+		val name = "nyora-backup-${UUID.randomUUID()}"
+		databaseNames += name
+		val database = database(name)
+		val sql = database.openHelper.writableDatabase
+		val localMangaId = "migrated-local-manga"
+		sql.execSQL("INSERT INTO manga VALUES (?, 'Local title', '', '/local', '/local', 0, 0, 'SAFE', '', '', 'ONGOING', '', '{\"name\":\"LOCAL\"}', '', '[]', '[]', 0, 0)", arrayOf(localMangaId))
+		sql.execSQL("INSERT INTO favourite_categories VALUES (1, 100, 0, 'Migrated local', 'ALPHABETIC', 1, 1, 0)")
+		sql.execSQL("INSERT INTO favourites VALUES (?, 1, 0, 1, 101, 0)", arrayOf(localMangaId))
+		sql.query("SELECT COUNT(*) FROM nyora_backup_identity_map").use { cursor ->
+			assertTrue(cursor.moveToFirst())
+			assertEquals(0, cursor.getInt(0))
+		}
+		val repository = NyoraRoomBackupRepository(
+			database = database,
+			availableSourceIds = { setOf(SOURCE_ID) },
+			initialSnapshot = NyoraRoomBackupProjector(database, "test")::snapshot,
+			materializer = NyoraRoomPortableMaterializer(database),
+		)
+		val timestamp = "2026-08-21T00:00:00.000Z"
+		val portableCategoryId = "12121212-1212-1212-1212-121212121212"
+		val portableMangaId = NyoraBackupIdentity.mangaId(SOURCE_ID, "/incoming")
+		val uncategorizedMangaId = NyoraBackupIdentity.mangaId(SOURCE_ID, "/uncategorized")
+		val incoming = NyoraBackupSnapshot(
+			archiveId = "34343434-3434-3434-3434-343434343434",
+			createdAt = timestamp,
+			appVersion = "test",
+			platform = "android-test",
+			sources = listOf(NyoraBackupSource(SOURCE_ID, "r1", updatedAt = timestamp)),
+			categories = listOf(NyoraBackupCategory(portableCategoryId, "Portable", 0, timestamp)),
+			manga = listOf(
+				NyoraBackupManga(portableMangaId, SOURCE_ID, "/incoming", "Incoming", timestamp),
+				NyoraBackupManga(uncategorizedMangaId, SOURCE_ID, "/uncategorized", "Uncategorized", timestamp),
+			),
+			library = listOf(
+				NyoraBackupLibrary(portableMangaId, timestamp, listOf(portableCategoryId)),
+				NyoraBackupLibrary(uncategorizedMangaId, timestamp, emptyList()),
+			),
+		)
+
+		repository.apply(NyoraBackupCodec.encode(incoming), NyoraRestoreMode.Replace)
+
+		val mappedCategoryId = checkNotNull(
+			database.getNyoraBackupIdentityMapDao().findLocalKey("category", portableCategoryId),
+		).toInt()
+		val sentinelCategoryId = checkNotNull(
+			database.getNyoraBackupIdentityMapDao().findLocalKey("category", "__nyora_uncategorized__"),
+		).toInt()
+		assertTrue(mappedCategoryId != 1)
+		assertTrue(sentinelCategoryId != 1)
+		assertTrue(sentinelCategoryId != mappedCategoryId)
+		sql.query("SELECT title FROM favourite_categories WHERE category_id = 1").use { cursor ->
+			assertTrue(cursor.moveToFirst())
+			assertEquals("Migrated local", cursor.getString(0))
+		}
+		sql.query("SELECT category_id FROM favourites WHERE manga_id = ?", arrayOf(localMangaId)).use { cursor ->
+			assertTrue(cursor.moveToFirst())
+			assertEquals(1, cursor.getInt(0))
+		}
+		sql.query("SELECT title FROM favourite_categories WHERE category_id = ?", arrayOf(mappedCategoryId.toString())).use { cursor ->
+			assertTrue(cursor.moveToFirst())
+			assertEquals("Portable", cursor.getString(0))
+		}
+		database.close()
+	}
+
+	@Test
 	fun realProjectorAndMaterializerPreserveCategoryTrackingAndUncategorizedIdentity() = runBlocking {
 		val name = "nyora-backup-${UUID.randomUUID()}"
 		databaseNames += name

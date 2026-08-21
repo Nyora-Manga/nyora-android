@@ -52,7 +52,20 @@ abstract class NyoraBackupIdentityMapDao {
 	@Query("SELECT portable_id FROM nyora_backup_identity_map WHERE kind = :kind AND local_key = :localKey")
 	abstract suspend fun findPortableId(kind: String, localKey: String): String?
 
-	@Query("SELECT COALESCE(MAX(CAST(local_key AS INTEGER)), 0) + 1 FROM nyora_backup_identity_map WHERE kind = :kind")
+	@Query(
+		"""
+		SELECT COALESCE(MAX(candidate), 0) + 1
+		FROM (
+			SELECT CAST(local_key AS INTEGER) AS candidate
+			FROM nyora_backup_identity_map
+			WHERE kind = :kind
+			UNION ALL
+			SELECT category_id AS candidate
+			FROM favourite_categories
+			WHERE :kind = 'category'
+		)
+		""",
+	)
 	protected abstract suspend fun nextNumericLocalKey(kind: String): Int
 
 	@Insert(onConflict = OnConflictStrategy.ABORT)
