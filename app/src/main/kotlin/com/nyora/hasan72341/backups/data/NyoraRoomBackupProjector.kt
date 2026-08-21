@@ -28,8 +28,13 @@ class NyoraRoomBackupProjector(
 		val sourceIds = (sourceRows.mapNotNull { NyoraSourceIdentity.canonicalize(it.source) } +
 			canonicalByLocalId.values.map { it.sourceId }).toSortedSet()
 		val categoryRows = database.getFavouriteCategoriesDao().findAllForSync()
+		val favourites = database.getFavouritesDao().findAllForBackup()
 		val identityMap = database.getNyoraBackupIdentityMapDao()
-		val categoryProjections = categoryRows.map { row ->
+		val favouritesByCategory = favourites.groupBy { it.categoryId }
+		val categoryProjections = categoryRows.filter { row ->
+			val references = favouritesByCategory[row.categoryId.toLong()].orEmpty()
+			references.isEmpty() || references.any { canonicalByLocalId.containsKey(it.mangaId) }
+		}.map { row ->
 			val portableId = identityMap.findPortableId("category", row.categoryId.toString())
 				?: portableUuid("category", row.categoryId.toString())
 			row.categoryId.toLong() to NyoraBackupCategory(
@@ -42,7 +47,6 @@ class NyoraRoomBackupProjector(
 		}
 		val categories = categoryProjections.map { it.second }.sortedBy { it.id }
 		val categoryByLocalId = categoryProjections.associate { (localId, portable) -> localId to portable.id }
-		val favourites = database.getFavouritesDao().findAllForBackup()
 		val liveFavourites = favourites.filter { it.deletedAt == 0L && canonicalByLocalId.containsKey(it.mangaId) }
 		val manga = canonicalByLocalId.values.map { projection ->
 			val model = projection.row.toManga()

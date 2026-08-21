@@ -21,6 +21,7 @@ class NyoraRoomPortableMaterializer(
 	override suspend fun replace(snapshot: NyoraBackupSnapshot) {
 		val sql = database.openHelper.writableDatabase
 		val now = System.currentTimeMillis()
+		val previouslyManagedCategoryIds = mappedNumericLocalIds("category")
 		sql.execSQL("DELETE FROM sources WHERE source LIKE 'data:%' OR source LIKE 'JS_%' OR source LIKE 'MIHON_%' OR source LIKE 'mihon:%' OR source GLOB '[0-9]*'")
 		snapshot.sources.filter { it.deletedAt == null }.forEachIndexed { index, source ->
 			database.getSourcesDao().upsert(
@@ -28,6 +29,9 @@ class NyoraRoomPortableMaterializer(
 			)
 		}
 		val chaptersByManga = snapshot.chapters.filter { it.deletedAt == null }.groupBy { it.mangaId }
+		snapshot.manga.forEach { item ->
+			database.getNyoraBackupIdentityMapDao().recordLocalKey("manga", item.id, item.id)
+		}
 		// Manga owns device-only children (downloads, statistics and reader preferences). Never delete it here:
 		// an absent portable row is excluded from the ledger/library while its local Room graph remains intact.
 		snapshot.manga.filter { it.deletedAt == null }.forEach { item ->
@@ -56,11 +60,12 @@ class NyoraRoomPortableMaterializer(
 				).toEntity(),
 			)
 		}
-		// Portable collection state is rebuilt from the validated target projection.
-		sql.execSQL("DELETE FROM favourites")
-		sql.execSQL("DELETE FROM favourite_categories")
+		// Portable collection state is rebuilt without touching rows owned by non-portable manga.
+		deleteManagedRows("favourites")
+		val targetCategoryIds = linkedSetOf<Int>()
 		val categoryIds = snapshot.categories.filter { it.deletedAt == null }.associate { category ->
 			val localId = database.getNyoraBackupIdentityMapDao().resolveLocalId("category", category.id)
+			targetCategoryIds += localId
 			database.getFavouriteCategoriesDao().upsert(
 				FavouriteCategoryEntity(
 					categoryId = localId,
@@ -78,6 +83,7 @@ class NyoraRoomPortableMaterializer(
 		val uncategorized = snapshot.library.any { it.deletedAt == null && it.categoryIds.isEmpty() }
 		val uncategorizedId = if (uncategorized) {
 			database.getNyoraBackupIdentityMapDao().resolveLocalId("category", NYORA_UNCATEGORIZED_PORTABLE_ID).also { localId ->
+				targetCategoryIds += localId
 				database.getFavouriteCategoriesDao().upsert(
 					FavouriteCategoryEntity(
 						categoryId = localId,
@@ -92,6 +98,11 @@ class NyoraRoomPortableMaterializer(
 				)
 			}.toLong()
 		} else null
+		(previouslyManagedCategoryIds - targetCategoryIds).forEach { categoryId ->
+			if (!hasFavouriteReference(categoryId)) {
+				sql.execSQL("DELETE FROM favourite_categories WHERE category_id = ?", arrayOf(categoryId))
+			}
+		}
 		snapshot.library.filter { it.deletedAt == null }.forEach { item ->
 			val localCategories = item.categoryIds.mapNotNull(categoryIds::get).ifEmpty { listOfNotNull(uncategorizedId) }
 			localCategories.forEachIndexed { index, categoryId ->
@@ -100,8 +111,11 @@ class NyoraRoomPortableMaterializer(
 				)
 			}
 		}
-		// Keep excluded statistics rows intact by soft-deleting absent history instead of deleting it.
-		sql.execSQL("UPDATE history SET deleted_at = ? WHERE deleted_at = 0", arrayOf(now))
+		// Keep excluded statistics and non-portable history intact; only managed portable rows are reconciled.
+		sql.execSQL(
+			"UPDATE history SET deleted_at = ? WHERE deleted_at = 0 AND manga_id IN ($MANAGED_MANGA_IDS_SQL)",
+			arrayOf(now),
+		)
 		snapshot.history.forEach { item ->
 			val values = arrayOf<Any?>(
 				item.mangaId,
@@ -123,7 +137,7 @@ class NyoraRoomPortableMaterializer(
 				arrayOf(values[1], values[2], values[3], values[4], values[5], values[6], values[7], values[8], values[0]),
 			)
 		}
-		sql.execSQL("DELETE FROM bookmarks")
+		deleteManagedRows("bookmarks")
 		database.getBookmarksDao().upsert(
 			snapshot.bookmarks.filter { it.deletedAt == null }.map { item ->
 				database.getNyoraBackupIdentityMapDao().recordLocalKey("bookmark", item.id, "${item.mangaId}\u0000${item.id}")
@@ -140,7 +154,7 @@ class NyoraRoomPortableMaterializer(
 				)
 			},
 		)
-		sql.execSQL("DELETE FROM scrobblings")
+		deleteManagedRows("scrobblings")
 		snapshot.tracking.filter { it.deletedAt == null }.forEach { item ->
 			val service = ScrobblerService.entries.firstOrNull { it.name.equals(item.service, true) } ?: return@forEach
 			val localId = database.getNyoraBackupIdentityMapDao().resolveLocalId("tracking:${item.service.lowercase()}", item.id)
@@ -161,7 +175,28 @@ class NyoraRoomPortableMaterializer(
 
 	private fun millis(timestamp: String): Long = Instant.parse(timestamp).toEpochMilli()
 
+	private fun mappedNumericLocalIds(kind: String): Set<Int> = buildSet {
+		database.openHelper.readableDatabase.query(
+			"SELECT local_key FROM nyora_backup_identity_map WHERE kind = ?",
+			arrayOf(kind),
+		).use { cursor -> while (cursor.moveToNext()) cursor.getString(0).toIntOrNull()?.let(::add) }
+	}
+
+	private fun hasFavouriteReference(categoryId: Int): Boolean = database.openHelper.readableDatabase.query(
+		"SELECT EXISTS(SELECT 1 FROM favourites WHERE category_id = ?)",
+		arrayOf(categoryId),
+	).use { cursor -> cursor.moveToFirst() && cursor.getInt(0) != 0 }
+
+	private fun deleteManagedRows(table: String) {
+		database.openHelper.writableDatabase.execSQL(
+			"DELETE FROM $table WHERE manga_id IN ($MANAGED_MANGA_IDS_SQL)",
+		)
+	}
+
 	private companion object {
 		const val UNCATEGORIZED_DISPLAY_TITLE = "\u0000nyora internal uncategorized"
+		const val MANAGED_MANGA_IDS_SQL =
+			"SELECT manga_id FROM manga WHERE source LIKE 'data:%' OR source LIKE '%\"data:%' " +
+				"UNION SELECT local_key FROM nyora_backup_identity_map WHERE kind = 'manga'"
 	}
 }

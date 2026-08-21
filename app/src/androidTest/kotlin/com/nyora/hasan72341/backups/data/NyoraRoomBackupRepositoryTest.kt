@@ -1,6 +1,7 @@
 package com.nyora.hasan72341.backups.data
 
 import android.content.Context
+import android.database.Cursor
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -332,6 +333,91 @@ class NyoraRoomBackupRepositoryTest {
 			assertEquals(3, cursor.getInt(1))
 		}
 		database.close()
+	}
+
+	@Test
+	fun mergeAndReplacePreserveNonportableCollectionRowsAndExcludeThemFromLedger() = runBlocking {
+		val name = "nyora-backup-${UUID.randomUUID()}"
+		databaseNames += name
+		val database = database(name)
+		val sql = database.openHelper.writableDatabase
+		val localMangaId = "local-manga"
+		val localCategoryId = 42
+		sql.execSQL("INSERT INTO manga VALUES (?, 'Local title', 'Alt', '/local', '/local-public', 0.7, 0, 'SAFE', 'cover', 'large', 'ONGOING', 'Author', '{\"name\":\"LOCAL\"}', 'Local description', '[\"tag\"]', '[]', 3, 0.4)", arrayOf(localMangaId))
+		sql.execSQL("INSERT INTO favourite_categories VALUES (?, 100, 7, 'Local category', 'ALPHABETIC', 1, 1, 0)", arrayOf(localCategoryId))
+		sql.execSQL("INSERT INTO nyora_backup_identity_map VALUES ('category', '99999999-9999-9999-9999-999999999999', ?)", arrayOf(localCategoryId.toString()))
+		sql.execSQL("INSERT INTO favourites VALUES (?, ?, 5, 1, 101, 0)", arrayOf(localMangaId, localCategoryId))
+		sql.execSQL("INSERT INTO history VALUES (?, 102, 103, 'local-chapter', 4, 0.25, 0.5, 0, 9)", arrayOf(localMangaId))
+		sql.execSQL("INSERT INTO bookmarks VALUES (?, 'local-page', 'local-chapter', 4, 8, 'image', 104, 0.5, 0)", arrayOf(localMangaId))
+		sql.execSQL("INSERT INTO scrobblings VALUES (0, 991, ?, 123, 'READING', 4, 'note', 0.8)", arrayOf(localMangaId))
+		sql.execSQL("INSERT INTO local_index VALUES (?, '/download/local')", arrayOf(localMangaId))
+		sql.execSQL("INSERT INTO preferences VALUES (?, 2, 0.8, 1.2, 1, 0, 1, 1, 'Override', 'cover-override', 'SAFE')", arrayOf(localMangaId))
+		sql.execSQL("INSERT INTO stats VALUES (?, 105, 600, 12)", arrayOf(localMangaId))
+		val protectedQueries = linkedMapOf(
+			"manga" to "SELECT * FROM manga WHERE manga_id = 'local-manga'",
+			"category" to "SELECT * FROM favourite_categories WHERE category_id = 42",
+			"favourite" to "SELECT * FROM favourites WHERE manga_id = 'local-manga'",
+			"history" to "SELECT * FROM history WHERE manga_id = 'local-manga'",
+			"bookmark" to "SELECT * FROM bookmarks WHERE manga_id = 'local-manga'",
+			"tracking" to "SELECT * FROM scrobblings WHERE manga_id = 'local-manga'",
+			"download" to "SELECT * FROM local_index WHERE manga_id = 'local-manga'",
+			"preferences" to "SELECT * FROM preferences WHERE manga_id = 'local-manga'",
+			"statistics" to "SELECT * FROM stats WHERE manga_id = 'local-manga'",
+		)
+		val before = protectedQueries.mapValues { dumpRows(sql.query(it.value)) }
+		val repository = NyoraRoomBackupRepository(
+			database = database,
+			availableSourceIds = { setOf(SOURCE_ID) },
+			initialSnapshot = NyoraRoomBackupProjector(database, "test")::snapshot,
+			materializer = NyoraRoomPortableMaterializer(database),
+		)
+		val timestamp = "2026-08-21T00:00:00.000Z"
+		val portableId = NyoraBackupIdentity.mangaId(SOURCE_ID, "/portable")
+		val incoming = NyoraBackupSnapshot(
+			archiveId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+			createdAt = timestamp,
+			appVersion = "test",
+			platform = "android-test",
+			sources = listOf(NyoraBackupSource(SOURCE_ID, "r1", updatedAt = timestamp)),
+			manga = listOf(NyoraBackupManga(portableId, SOURCE_ID, "/portable", "Portable", timestamp)),
+		)
+
+		repository.apply(NyoraBackupCodec.encode(incoming), NyoraRestoreMode.Merge)
+		assertEquals(before, protectedQueries.mapValues { dumpRows(sql.query(it.value)) })
+		assertTrue(database.getFavouriteCategoriesDao().findAll().any { it.categoryId == localCategoryId })
+		assertProtectedRowsExcluded(repository.readSnapshot(), localMangaId, "99999999-9999-9999-9999-999999999999")
+
+		repository.apply(
+			NyoraBackupCodec.encode(incoming.copy(archiveId = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff")),
+			NyoraRestoreMode.Replace,
+		)
+		assertEquals(before, protectedQueries.mapValues { dumpRows(sql.query(it.value)) })
+		assertTrue(database.getFavouriteCategoriesDao().findAll().any { it.categoryId == localCategoryId })
+		assertProtectedRowsExcluded(repository.readSnapshot(), localMangaId, "99999999-9999-9999-9999-999999999999")
+		database.close()
+	}
+
+	private fun assertProtectedRowsExcluded(snapshot: NyoraBackupSnapshot, localMangaId: String, categoryId: String) {
+		assertTrue(snapshot.manga.none { it.id == localMangaId })
+		assertTrue(snapshot.categories.none { it.id == categoryId })
+		assertTrue(snapshot.library.none { it.mangaId == localMangaId })
+		assertTrue(snapshot.history.none { it.mangaId == localMangaId })
+		assertTrue(snapshot.bookmarks.none { it.mangaId == localMangaId })
+		assertTrue(snapshot.tracking.none { it.mangaId == localMangaId })
+	}
+
+	private fun dumpRows(cursor: Cursor): List<List<Any?>> = cursor.use {
+		buildList {
+			while (it.moveToNext()) add((0 until it.columnCount).map { column ->
+				when (it.getType(column)) {
+					Cursor.FIELD_TYPE_NULL -> null
+					Cursor.FIELD_TYPE_INTEGER -> it.getLong(column)
+					Cursor.FIELD_TYPE_FLOAT -> it.getDouble(column)
+					Cursor.FIELD_TYPE_BLOB -> it.getBlob(column).toList()
+					else -> it.getString(column)
+				}
+			})
+		}
 	}
 
 	private fun database(name: String): MangaDatabase = Room.databaseBuilder(context, MangaDatabase::class.java, name)
