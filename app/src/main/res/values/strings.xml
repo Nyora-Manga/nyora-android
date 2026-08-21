@@ -1021,4 +1021,8 @@
     <string name="ai_model_summary">Model name to use for refinement (for example: gpt-4o-mini).</string>
     <string name="layout">Layout</string>
     <string name="tools">Tools</string>
+	<string name="backup_restore_merge">Merge</string>
+	<string name="backup_restore_replace">Replace</string>
+	<string name="backup_replace_confirmation">Replace all portable Nyora data with this archive? This cannot be undone.</string>
+	<string name="backup_restore_preview">%1$d additions · %2$d updates · %3$d deletions · %4$d unchanged</string>
 </resources>

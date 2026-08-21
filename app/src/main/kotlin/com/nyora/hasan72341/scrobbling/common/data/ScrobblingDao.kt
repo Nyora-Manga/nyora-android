@@ -9,6 +9,8 @@ import kotlinx.coroutines.isActive
 
 @Dao
 abstract class ScrobblingDao {
+	@Query("SELECT * FROM scrobblings ORDER BY scrobbler, id, manga_id")
+	abstract suspend fun findAllForBackup(): List<ScrobblingEntity>
 
 	@Query("SELECT * FROM scrobblings WHERE scrobbler = :scrobbler AND manga_id = :mangaId")
 	abstract suspend fun find(scrobbler: Int, mangaId: String): ScrobblingEntity?

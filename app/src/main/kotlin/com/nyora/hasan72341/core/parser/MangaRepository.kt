@@ -98,7 +98,7 @@ interface MangaRepository {
 			)
 
 			else -> {
-				if (source.name.startsWith("JS_")) {
+				if (source.name.startsWith("JS_") || source.name.startsWith("data:")) {
 					nyoraJsSourcesManager.getByName(source.name)?.let {
 						return NyoraJsMangaRepository(
 							source = it,

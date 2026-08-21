@@ -40,6 +40,12 @@ fun MangaSource(name: String?): MangaSource {
 		LocalMangaSource.name -> return LocalMangaSource
 		TestMangaSource.name -> return TestMangaSource
 	}
+	if (name.startsWith("data:")) {
+		return AnonymousMangaSource(name)
+	}
+	if (name.startsWith("MIHON_") || name.startsWith("mihon:") || name.all(Char::isDigit)) {
+		return UnknownMangaSource
+	}
 	if (name.startsWith("content:")) {
 		val parts = name.substringAfter(':').splitTwoParts('/') ?: return UnknownMangaSource
 		return ExternalMangaSource(packageName = parts.first, authority = parts.second)
@@ -147,7 +153,8 @@ fun String?.toMangaSourceRef(): MangaSourceRef = when (this) {
 	null, "", UnknownMangaSource.name -> MangaSourceRef.Unknown
 	LocalMangaSource.name -> MangaSourceRef.Local
 	else -> when {
-		startsWith("MIHON_") -> MangaSourceRef.Mihon(this, removePrefix("MIHON_").toLongOrNull() ?: 0L)
+		startsWith("data:") -> runCatching { MangaSourceRef.Data(this) }.getOrDefault(MangaSourceRef.Unknown)
+		startsWith("MIHON_") || startsWith("mihon:") || all(Char::isDigit) -> MangaSourceRef.Unknown
 		startsWith("JS_") -> MangaSourceRef.Script(this)
 		else -> MangaSourceRef.Parser(this)
 	}

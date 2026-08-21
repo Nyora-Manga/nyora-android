@@ -340,7 +340,7 @@ class MangaSourcesRepository @Inject constructor(
 	}
 
 	private fun String.toMangaSourceOrNull(): MangaSource? {
-		if (startsWith("JS_")) {
+		if (startsWith("JS_") || startsWith("data:")) {
 			return nyoraJsSourcesManager.getByName(this)
 		}
 		if (startsWith("content:")) {

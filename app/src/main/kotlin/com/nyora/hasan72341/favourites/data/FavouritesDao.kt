@@ -25,6 +25,8 @@ import com.nyora.hasan72341.list.domain.ReadingProgress.Companion.PROGRESS_COMPL
 
 @Dao
 abstract class FavouritesDao : MangaQueryBuilder.ConditionCallback {
+	@Query("SELECT * FROM favourites ORDER BY manga_id, category_id")
+	abstract suspend fun findAllForBackup(): List<FavouriteEntity>
 
 	/** SELECT **/
 

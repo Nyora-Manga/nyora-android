@@ -117,7 +117,7 @@ class NyoraJsMangaRepository(
         largeCoverUrl = largeCoverUrl,
         state = state?.let { runCatching { MangaState.valueOf(it.uppercase()) }.getOrNull() },
         authors = authors ?: emptyList(),
-        source = MangaSourceRef.Script(source.name),
+        source = MangaSourceRef.Data(source.portableName),
         description = description ?: "",
         tags = (tags ?: emptyList()).map { MangaTag(key = it.key, title = it.title) },
         chapters = (chapters ?: emptyList()).map { it.toChapter() },

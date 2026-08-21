@@ -15,8 +15,6 @@ import com.nyora.hasan72341.core.util.ext.MutableEventFlow
 import com.nyora.hasan72341.core.util.ext.call
 import com.nyora.hasan72341.core.util.ext.require
 import com.nyora.hasan72341.core.util.progress.Progress
-import java.util.zip.Deflater
-import java.util.zip.ZipOutputStream
 import javax.inject.Inject
 
 @HiltViewModel
@@ -34,8 +32,7 @@ class BackupViewModel @Inject constructor(
 
 	init {
 		launchLoadingJob(Dispatchers.IO) {
-			ZipOutputStream(checkNotNull(contentResolver.openOutputStream(destination))).use {
-				it.setLevel(Deflater.BEST_COMPRESSION)
+			checkNotNull(contentResolver.openOutputStream(destination)).use {
 				repository.createBackup(it, progress)
 			}
 			onBackupDone.call(destination)

@@ -3,6 +3,7 @@ package com.nyora.hasan72341.js
 import com.nyora.hasan72341.mihon.parsers.model.ContentSource
 import com.nyora.hasan72341.mihon.parsers.model.ContentType
 import com.nyora.hasan72341.mihon.parsers.model.MangaSource
+import java.util.Locale
 
 /**
  * A JS-bundle parser exposed as a first-class [MangaSource] (mirrors `MihonMangaSource`).
@@ -18,6 +19,8 @@ data class NyoraJsMangaSource(
     val domain: String,
     val nsfw: Boolean,
 ) : MangaSource, ContentSource {
+	val portableName: String
+		get() = "data:" + jsId.lowercase(Locale.ROOT).replace('_', '-')
 
     override val name: String get() = "JS_$jsId"
 

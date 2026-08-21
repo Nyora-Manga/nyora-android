@@ -11,6 +11,7 @@ import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
 import com.nyora.hasan72341.R
 import com.nyora.hasan72341.backups.domain.BackupUtils
+import com.nyora.hasan72341.backups.domain.NyoraBackupFiles
 import com.nyora.hasan72341.backups.ui.backup.BackupService
 import com.nyora.hasan72341.core.exceptions.resolve.SnackbarErrorObserver
 import com.nyora.hasan72341.core.nav.router
@@ -32,7 +33,7 @@ class BackupsSettingsFragment : BasePreferenceFragment(R.string.backup_restore),
     )
 
     private val backupCreateCall = registerForActivityResult(
-        ActivityResultContracts.CreateDocument("application/zip"),
+		ActivityResultContracts.CreateDocument(NyoraBackupFiles.MIME_TYPE),
     ) { uri ->
         if (uri != null) {
             if (!BackupService.start(requireContext(), uri)) {
@@ -65,7 +66,7 @@ class BackupsSettingsFragment : BasePreferenceFragment(R.string.backup_restore),
             }
 
             AppSettings.KEY_RESTORE -> {
-                if (!backupSelectCall.tryLaunch(arrayOf("*/*"))) {
+				if (!backupSelectCall.tryLaunch(arrayOf(NyoraBackupFiles.MIME_TYPE))) {
                     Snackbar.make(
                         listView, R.string.operation_not_supported, Snackbar.LENGTH_SHORT,
                     ).show()
