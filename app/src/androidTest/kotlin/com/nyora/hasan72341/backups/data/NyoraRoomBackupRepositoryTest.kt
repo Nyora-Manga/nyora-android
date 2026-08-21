@@ -7,6 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.util.UUID
 import java.time.Instant
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -14,6 +15,7 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import com.nyora.hasan72341.core.db.MangaDatabase
+import com.nyora.hasan72341.list.domain.ListSortOrder
 
 @RunWith(AndroidJUnit4::class)
 class NyoraRoomBackupRepositoryTest {
@@ -171,6 +173,19 @@ class NyoraRoomBackupRepositoryTest {
 		assertEquals(shaTrackingId, projected.tracking.single().id)
 		assertEquals(2, database.getFavouritesDao().findAllForBackup().size)
 		assertEquals(1, database.getScrobblingDao().findAllForBackup().size)
+		assertEquals(2, database.getFavouriteCategoriesDao().findAll().size)
+		assertEquals(2, database.getFavouriteCategoriesDao().findAllForSync().size)
+		assertTrue(database.getFavouritesDao().observeCategories(mangaTwo).first().isEmpty())
+		assertTrue(
+			database.getFavouritesDao().observeAll(ListSortOrder.UPDATED, emptySet(), 10).first()
+				.any { it.manga.id == mangaTwo },
+		)
+		database.openHelper.readableDatabase.query(
+			"SELECT show_in_lib FROM favourite_categories WHERE title = '__nyora_uncategorized__'",
+		).use { cursor ->
+			assertTrue(cursor.moveToFirst())
+			assertEquals(1, cursor.getInt(0))
+		}
 		database.close()
 	}
 
@@ -225,7 +240,7 @@ class NyoraRoomBackupRepositoryTest {
 	}
 
 	@Test
-	fun replaceRemovesPortableRowsThatAreAbsentFromTheTarget() = runBlocking {
+	fun replaceExcludesAbsentPortableMangaWithoutDeletingNonportableChildren() = runBlocking {
 		val name = "nyora-backup-${UUID.randomUUID()}"
 		databaseNames += name
 		val database = database(name)
@@ -237,16 +252,23 @@ class NyoraRoomBackupRepositoryTest {
 			materializer = NyoraRoomPortableMaterializer(database),
 		)
 		val timestamp = "2026-08-21T00:00:00.000Z"
+		val mangaId = NyoraBackupIdentity.mangaId(SOURCE_ID, "/old")
 		val populated = NyoraBackupSnapshot(
 			archiveId = "55555555-5555-5555-5555-555555555555",
 			createdAt = timestamp,
 			appVersion = "test",
 			platform = "android-test",
 			sources = listOf(NyoraBackupSource(SOURCE_ID, "r1", updatedAt = timestamp)),
-			manga = listOf(NyoraBackupManga(NyoraBackupIdentity.mangaId(SOURCE_ID, "/old"), SOURCE_ID, "/old", "Old", timestamp)),
+			manga = listOf(NyoraBackupManga(mangaId, SOURCE_ID, "/old", "Old", timestamp)),
+			library = listOf(NyoraBackupLibrary(mangaId, timestamp, emptyList())),
 		)
 		repository.apply(NyoraBackupCodec.encode(populated), NyoraRestoreMode.Replace)
 		assertEquals(1, database.getMangaDao().findAllForBackup().size)
+		val sql = database.openHelper.writableDatabase
+		sql.execSQL("INSERT INTO local_index (manga_id, path) VALUES (?, ?)", arrayOf(mangaId, "/download"))
+		sql.execSQL("INSERT INTO preferences (manga_id, mode, cf_brightness, cf_contrast, cf_invert, cf_grayscale, cf_book, cf_multitone, title_override, cover_override, content_rating_override) VALUES (?, 1, 1, 1, 0, 0, 0, 0, NULL, NULL, NULL)", arrayOf(mangaId))
+		sql.execSQL("INSERT INTO history (manga_id, created_at, updated_at, chapter_id, page, scroll, percent, deleted_at, chapters) VALUES (?, 1, 1, '', 0, 0, 0, 0, 0)", arrayOf(mangaId))
+		sql.execSQL("INSERT INTO stats (manga_id, started_at, duration, pages) VALUES (?, 1, 2, 3)", arrayOf(mangaId))
 		val empty = populated.copy(
 			archiveId = "77777777-7777-7777-7777-777777777777",
 			manga = emptyList(),
@@ -254,7 +276,15 @@ class NyoraRoomBackupRepositoryTest {
 
 		repository.apply(NyoraBackupCodec.encode(empty), NyoraRestoreMode.Replace)
 
-		assertTrue(database.getMangaDao().findAllForBackup().isEmpty())
+		assertEquals(emptyList<NyoraBackupManga>(), repository.readSnapshot().manga)
+		assertTrue(database.getFavouritesDao().findAllForBackup().isEmpty())
+		assertEquals(1, database.getMangaDao().findAllForBackup().size)
+		listOf("local_index", "preferences", "stats").forEach { table ->
+			sql.query("SELECT COUNT(*) FROM $table WHERE manga_id = ?", arrayOf(mangaId)).use { cursor ->
+				assertTrue(cursor.moveToFirst())
+				assertEquals("$table must survive portable replacement", 1, cursor.getInt(0))
+			}
+		}
 		database.close()
 	}
 

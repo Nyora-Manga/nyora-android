@@ -29,7 +29,7 @@ class NyoraRoomBackupProjector(
 			canonicalByLocalId.values.map { it.sourceId }).toSortedSet()
 		val categoryRows = database.getFavouriteCategoriesDao().findAllForSync()
 		val identityMap = database.getNyoraBackupIdentityMapDao()
-		val categoryProjections = categoryRows.filterNot { it.title == UNCATEGORIZED_CATEGORY_TITLE }.map { row ->
+		val categoryProjections = categoryRows.map { row ->
 			val portableId = identityMap.findPortableId("category", row.categoryId.toString())
 				?: portableUuid("category", row.categoryId.toString())
 			row.categoryId.toLong() to NyoraBackupCategory(
@@ -175,7 +175,6 @@ class NyoraRoomBackupProjector(
 	)
 
 	private companion object {
-		const val UNCATEGORIZED_CATEGORY_TITLE = "\u0000nyora-uncategorized"
 		val TIMESTAMP_FORMAT: DateTimeFormatter = DateTimeFormatter
 			.ofPattern("uuuu-MM-dd'T'HH:mm:ss.SSS'Z'")
 			.withZone(ZoneOffset.UTC)

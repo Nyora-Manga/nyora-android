@@ -5,6 +5,8 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.nyora.hasan72341.core.db.TABLE_FAVOURITE_CATEGORIES
 
+const val NYORA_UNCATEGORIZED_CATEGORY_TITLE = "__nyora_uncategorized__"
+
 @Entity(tableName = TABLE_FAVOURITE_CATEGORIES)
 data class FavouriteCategoryEntity(
 	@PrimaryKey(autoGenerate = true)

@@ -6,6 +6,7 @@ import com.nyora.hasan72341.core.db.entity.MangaSourceEntity
 import com.nyora.hasan72341.core.db.entity.toEntity
 import com.nyora.hasan72341.favourites.data.FavouriteCategoryEntity
 import com.nyora.hasan72341.favourites.data.FavouriteEntity
+import com.nyora.hasan72341.favourites.data.NYORA_UNCATEGORIZED_CATEGORY_TITLE
 import com.nyora.hasan72341.mihon.parsers.model.Manga
 import com.nyora.hasan72341.mihon.parsers.model.MangaChapter
 import com.nyora.hasan72341.mihon.parsers.model.MangaSourceRef
@@ -27,10 +28,8 @@ class NyoraRoomPortableMaterializer(
 			)
 		}
 		val chaptersByManga = snapshot.chapters.filter { it.deletedAt == null }.groupBy { it.mangaId }
-		// Merge has already produced the complete target, so materialization can replace portable manga atomically.
-		sql.execSQL(
-			"DELETE FROM manga WHERE source LIKE 'data:%' OR source LIKE '%\"data:%' OR source LIKE '%JS_%' OR source LIKE '%MIHON_%' OR source LIKE '%mihon:%' OR source GLOB '[0-9]*' OR source LIKE '{\"name\":\"[0-9]%'",
-		)
+		// Manga owns device-only children (downloads, statistics and reader preferences). Never delete it here:
+		// an absent portable row is excluded from the ledger/library while its local Room graph remains intact.
 		snapshot.manga.filter { it.deletedAt == null }.forEach { item ->
 			val chapters = chaptersByManga[item.id].orEmpty().mapIndexed { index, chapter ->
 				MangaChapter(
@@ -84,10 +83,10 @@ class NyoraRoomPortableMaterializer(
 						categoryId = localId,
 						createdAt = now,
 						sortKey = Int.MAX_VALUE,
-						title = UNCATEGORIZED_CATEGORY_TITLE,
+						title = NYORA_UNCATEGORIZED_CATEGORY_TITLE,
 						order = "MANUAL",
 						track = false,
-						isVisibleInLibrary = false,
+						isVisibleInLibrary = true,
 						deletedAt = 0L,
 					),
 				)
@@ -158,7 +157,6 @@ class NyoraRoomPortableMaterializer(
 	private fun millis(timestamp: String): Long = Instant.parse(timestamp).toEpochMilli()
 
 	private companion object {
-		const val UNCATEGORIZED_CATEGORY_TITLE = "\u0000nyora-uncategorized"
 		const val UNCATEGORIZED_PORTABLE_ID = "__nyora_uncategorized__"
 	}
 }
