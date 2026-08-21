@@ -92,4 +92,10 @@ class NyoraRestorePayloadOwner(
 		owned?.let(store::discard)
 		owned = null
 	}
+
+	fun onHostDestroyed(isChangingConfigurations: Boolean) {
+		if (!isChangingConfigurations) discard()
+	}
+
+	fun onViewModelCleared() = discard()
 }

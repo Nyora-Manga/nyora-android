@@ -150,14 +150,14 @@ class NyoraRoomBackupRepositoryTest {
 			sources = listOf(NyoraBackupSource(SOURCE_ID, "r1", updatedAt = timestamp)),
 			categories = listOf(
 				NyoraBackupCategory(laterCategory, "Later", 0, timestamp),
-				NyoraBackupCategory(earlierCategory, "Earlier", 1, timestamp),
+				NyoraBackupCategory(earlierCategory, "__nyora_uncategorized__", 1, timestamp),
 			),
 			manga = listOf(
 				NyoraBackupManga(mangaOne, SOURCE_ID, "/one", "One", timestamp),
 				NyoraBackupManga(mangaTwo, SOURCE_ID, "/two", "Two", timestamp),
 			),
 			library = listOf(
-				NyoraBackupLibrary(mangaOne, timestamp, listOf(laterCategory)),
+				NyoraBackupLibrary(mangaOne, timestamp, listOf(laterCategory, earlierCategory)),
 				NyoraBackupLibrary(mangaTwo, timestamp, emptyList()),
 			),
 			tracking = listOf(
@@ -168,20 +168,29 @@ class NyoraRoomBackupRepositoryTest {
 		repository.apply(NyoraBackupCodec.encode(incoming), NyoraRestoreMode.Replace)
 		val projected = projector.snapshot()
 
-		assertEquals(listOf(laterCategory), projected.library.single { it.mangaId == mangaOne }.categoryIds)
+		assertEquals(setOf(laterCategory, earlierCategory), projected.library.single { it.mangaId == mangaOne }.categoryIds.toSet())
 		assertEquals(emptyList<String>(), projected.library.single { it.mangaId == mangaTwo }.categoryIds)
+		assertTrue(projected.categories.any { it.id == earlierCategory && it.title == "__nyora_uncategorized__" })
 		assertEquals(shaTrackingId, projected.tracking.single().id)
 		assertEquals(2, database.getFavouritesDao().findAllForBackup().size)
 		assertEquals(1, database.getScrobblingDao().findAllForBackup().size)
 		assertEquals(2, database.getFavouriteCategoriesDao().findAll().size)
 		assertEquals(2, database.getFavouriteCategoriesDao().findAllForSync().size)
+		assertTrue(database.getFavouritesDao().findAll().any { it.manga.id == mangaTwo })
+		assertTrue(database.getFavouritesDao().findAllForSync().none { it.manga.id == mangaTwo })
 		assertTrue(database.getFavouritesDao().observeCategories(mangaTwo).first().isEmpty())
 		assertTrue(
 			database.getFavouritesDao().observeAll(ListSortOrder.UPDATED, emptySet(), 10).first()
 				.any { it.manga.id == mangaTwo },
 		)
 		database.openHelper.readableDatabase.query(
-			"SELECT show_in_lib FROM favourite_categories WHERE title = '__nyora_uncategorized__'",
+			"SELECT COUNT(*) FROM favourite_categories WHERE title = '__nyora_uncategorized__'",
+		).use { cursor ->
+			assertTrue(cursor.moveToFirst())
+			assertEquals(1, cursor.getInt(0))
+		}
+		database.openHelper.readableDatabase.query(
+			"SELECT c.show_in_lib FROM favourite_categories c JOIN nyora_backup_identity_map m ON CAST(c.category_id AS TEXT) = m.local_key WHERE m.kind = 'category' AND m.portable_id = '__nyora_uncategorized__'",
 		).use { cursor ->
 			assertTrue(cursor.moveToFirst())
 			assertEquals(1, cursor.getInt(0))
@@ -284,6 +293,43 @@ class NyoraRoomBackupRepositoryTest {
 				assertTrue(cursor.moveToFirst())
 				assertEquals("$table must survive portable replacement", 1, cursor.getInt(0))
 			}
+		}
+		database.close()
+	}
+
+	@Test
+	fun restoringExistingHistoryUpdatesInPlaceWithoutDeletingStatistics() = runBlocking {
+		val name = "nyora-backup-${UUID.randomUUID()}"
+		databaseNames += name
+		val database = database(name)
+		val projector = NyoraRoomBackupProjector(database, "test")
+		val repository = NyoraRoomBackupRepository(
+			database = database,
+			availableSourceIds = { setOf(SOURCE_ID) },
+			initialSnapshot = projector::snapshot,
+			materializer = NyoraRoomPortableMaterializer(database),
+		)
+		val timestamp = "2026-08-21T00:00:00.000Z"
+		val mangaId = NyoraBackupIdentity.mangaId(SOURCE_ID, "/history")
+		val snapshot = NyoraBackupSnapshot(
+			archiveId = "88888888-8888-8888-8888-888888888888",
+			createdAt = timestamp,
+			appVersion = "test",
+			platform = "android-test",
+			sources = listOf(NyoraBackupSource(SOURCE_ID, "r1", updatedAt = timestamp)),
+			manga = listOf(NyoraBackupManga(mangaId, SOURCE_ID, "/history", "History", timestamp)),
+			history = listOf(NyoraBackupHistory(mangaId, page = 2, percent = 0.5, updatedAt = timestamp)),
+		)
+		repository.apply(NyoraBackupCodec.encode(snapshot), NyoraRestoreMode.Replace)
+		val sql = database.openHelper.writableDatabase
+		sql.execSQL("INSERT INTO stats (manga_id, started_at, duration, pages) VALUES (?, 1, 2, 3)", arrayOf(mangaId))
+
+		repository.apply(NyoraBackupCodec.encode(snapshot), NyoraRestoreMode.Replace)
+
+		sql.query("SELECT duration, pages FROM stats WHERE manga_id = ?", arrayOf(mangaId)).use { cursor ->
+			assertTrue(cursor.moveToFirst())
+			assertEquals(2L, cursor.getLong(0))
+			assertEquals(3, cursor.getInt(1))
 		}
 		database.close()
 	}

@@ -6,7 +6,7 @@ import com.nyora.hasan72341.core.db.entity.MangaSourceEntity
 import com.nyora.hasan72341.core.db.entity.toEntity
 import com.nyora.hasan72341.favourites.data.FavouriteCategoryEntity
 import com.nyora.hasan72341.favourites.data.FavouriteEntity
-import com.nyora.hasan72341.favourites.data.NYORA_UNCATEGORIZED_CATEGORY_TITLE
+import com.nyora.hasan72341.favourites.data.NYORA_UNCATEGORIZED_PORTABLE_ID
 import com.nyora.hasan72341.mihon.parsers.model.Manga
 import com.nyora.hasan72341.mihon.parsers.model.MangaChapter
 import com.nyora.hasan72341.mihon.parsers.model.MangaSourceRef
@@ -77,13 +77,13 @@ class NyoraRoomPortableMaterializer(
 		}
 		val uncategorized = snapshot.library.any { it.deletedAt == null && it.categoryIds.isEmpty() }
 		val uncategorizedId = if (uncategorized) {
-			database.getNyoraBackupIdentityMapDao().resolveLocalId("category", UNCATEGORIZED_PORTABLE_ID).also { localId ->
+			database.getNyoraBackupIdentityMapDao().resolveLocalId("category", NYORA_UNCATEGORIZED_PORTABLE_ID).also { localId ->
 				database.getFavouriteCategoriesDao().upsert(
 					FavouriteCategoryEntity(
 						categoryId = localId,
 						createdAt = now,
 						sortKey = Int.MAX_VALUE,
-						title = NYORA_UNCATEGORIZED_CATEGORY_TITLE,
+						title = UNCATEGORIZED_DISPLAY_TITLE,
 						order = "MANUAL",
 						track = false,
 						isVisibleInLibrary = true,
@@ -103,19 +103,24 @@ class NyoraRoomPortableMaterializer(
 		// Keep excluded statistics rows intact by soft-deleting absent history instead of deleting it.
 		sql.execSQL("UPDATE history SET deleted_at = ? WHERE deleted_at = 0", arrayOf(now))
 		snapshot.history.forEach { item ->
+			val values = arrayOf<Any?>(
+				item.mangaId,
+				millis(item.updatedAt),
+				millis(item.updatedAt),
+				item.chapterId.orEmpty(),
+				item.page ?: 0,
+				0f,
+				item.percent?.toFloat() ?: 0f,
+				item.deletedAt?.let(::millis) ?: 0L,
+				chaptersByManga[item.mangaId].orEmpty().size,
+			)
 			sql.execSQL(
-				"INSERT OR REPLACE INTO history (manga_id, created_at, updated_at, chapter_id, page, scroll, percent, deleted_at, chapters) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-					arrayOf<Any?>(
-					item.mangaId,
-					millis(item.updatedAt),
-					millis(item.updatedAt),
-					item.chapterId.orEmpty(),
-					item.page ?: 0,
-					0f,
-					item.percent?.toFloat() ?: 0f,
-					item.deletedAt?.let(::millis) ?: 0L,
-					chaptersByManga[item.mangaId].orEmpty().size,
-				),
+				"INSERT OR IGNORE INTO history (manga_id, created_at, updated_at, chapter_id, page, scroll, percent, deleted_at, chapters) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+				values,
+			)
+			sql.execSQL(
+				"UPDATE history SET created_at = ?, updated_at = ?, chapter_id = ?, page = ?, scroll = ?, percent = ?, deleted_at = ?, chapters = ? WHERE manga_id = ?",
+				arrayOf(values[1], values[2], values[3], values[4], values[5], values[6], values[7], values[8], values[0]),
 			)
 		}
 		sql.execSQL("DELETE FROM bookmarks")
@@ -157,6 +162,6 @@ class NyoraRoomPortableMaterializer(
 	private fun millis(timestamp: String): Long = Instant.parse(timestamp).toEpochMilli()
 
 	private companion object {
-		const val UNCATEGORIZED_PORTABLE_ID = "__nyora_uncategorized__"
+		const val UNCATEGORIZED_DISPLAY_TITLE = "\u0000nyora internal uncategorized"
 	}
 }

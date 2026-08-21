@@ -368,7 +368,7 @@ class SupabaseSync @Inject constructor(
 
     private suspend fun pushMangaCategories() {
         val uid = config.userId
-        val entities = runCatching { favouritesDao.findAll() }.getOrNull() ?: return
+        val entities = runCatching { favouritesDao.findAllForSync() }.getOrNull() ?: return
         if (entities.isEmpty()) return
         val rows = JSONArray()
         for (fm in entities) {

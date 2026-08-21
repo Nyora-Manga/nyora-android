@@ -35,8 +35,9 @@ class NyoraRestorePayloadStoreTest {
 
 		val started = NyoraRestorePayloadOwner(store, store.prepare(byteArrayOf(3)))
 		assertTrue(started.handOff { true })
+		assertFalse(started.handOff { throw AssertionError("payload was handed off twice") })
 		started.discard()
-		assertArrayEquals(byteArrayOf(3), store.consume(directory.listFiles().single()))
+		assertArrayEquals(byteArrayOf(3), store.consume(checkNotNull(directory.listFiles()).single()))
 	}
 
 	@Test
@@ -58,7 +59,7 @@ class NyoraRestorePayloadStoreTest {
 		val latest = store.prepare(byteArrayOf(4))
 
 		assertFalse(stale.exists())
-		assertEquals(2, directory.listFiles().size)
+		assertEquals(2, checkNotNull(directory.listFiles()).size)
 		assertTrue(latest.exists())
 	}
 
@@ -70,6 +71,31 @@ class NyoraRestorePayloadStoreTest {
 		val recovered = NyoraRestorePayloadStore(directory).consume(prepared)
 
 		assertArrayEquals(byteArrayOf(7, 8), recovered)
+		assertTrue(directory.listFiles().isNullOrEmpty())
+	}
+
+	@Test
+	fun `configuration destruction retains ownership until the recreated host finishes`() {
+		val directory = Files.createTempDirectory("nyora-restore-payload").toFile()
+		val store = NyoraRestorePayloadStore(directory)
+		val owner = NyoraRestorePayloadOwner(store, store.prepare(byteArrayOf(5)))
+
+		owner.onHostDestroyed(isChangingConfigurations = true)
+
+		assertTrue(owner.payload?.exists() == true)
+		owner.onHostDestroyed(isChangingConfigurations = false)
+		assertTrue(directory.listFiles().isNullOrEmpty())
+	}
+
+	@Test
+	fun `final viewmodel clear discards a payload retained across configuration change`() {
+		val directory = Files.createTempDirectory("nyora-restore-payload").toFile()
+		val store = NyoraRestorePayloadStore(directory)
+		val owner = NyoraRestorePayloadOwner(store, store.prepare(byteArrayOf(6)))
+		owner.onHostDestroyed(isChangingConfigurations = true)
+
+		owner.onViewModelCleared()
+
 		assertTrue(directory.listFiles().isNullOrEmpty())
 	}
 }

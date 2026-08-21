@@ -72,6 +72,17 @@ class RestoreViewModel @Inject constructor(
 		payloadOwner = null
 	}
 
+	fun onHostDestroyed(isChangingConfigurations: Boolean) {
+		payloadOwner?.onHostDestroyed(isChangingConfigurations)
+		if (!isChangingConfigurations) payloadOwner = null
+	}
+
+	override fun onCleared() {
+		payloadOwner?.onViewModelCleared()
+		payloadOwner = null
+		super.onCleared()
+	}
+
 	private suspend fun replan(selectedMode: NyoraRestoreMode) {
 		val bytes = checkNotNull(archiveBytes)
 		val preview = repository.planBackup(ByteArrayInputStream(bytes), selectedMode)

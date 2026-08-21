@@ -1,6 +1,5 @@
 package com.nyora.hasan72341.backups.ui.restore
 
-import android.content.DialogInterface
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -52,7 +51,10 @@ class RestoreDialogFragment : AlertDialogFragment<DialogRestoreBinding>(), View.
 
 	override fun onClick(view: View) {
 		when (view.id) {
-			R.id.button_cancel -> dismiss()
+			R.id.button_cancel -> {
+				viewModel.discardPreparedPayload()
+				dismiss()
+			}
 			R.id.button_restore -> if (startRestoreService()) {
 				Toast.makeText(view.context, R.string.backup_restored_background, Toast.LENGTH_SHORT).show()
 				router.closeWelcomeSheet()
@@ -102,9 +104,9 @@ class RestoreDialogFragment : AlertDialogFragment<DialogRestoreBinding>(), View.
 		return viewModel.handOffPayload { payload -> RestoreService.start(context, payload, viewModel.restoreRequest()) }
 	}
 
-	override fun onDismiss(dialog: DialogInterface) {
-		viewModel.discardPreparedPayload()
-		super.onDismiss(dialog)
+	override fun onDestroy() {
+		activity?.let { viewModel.onHostDestroyed(it.isChangingConfigurations) }
+		super.onDestroy()
 	}
 
 	private fun Date.formatBackupDate(): String = getString(
@@ -118,6 +120,7 @@ class RestoreDialogFragment : AlertDialogFragment<DialogRestoreBinding>(), View.
 			.setTitle(R.string.error)
 			.setMessage(error.getDisplayMessage(resources))
 			.show()
+		viewModel.discardPreparedPayload()
 		dismiss()
 	}
 }
