@@ -9,6 +9,7 @@ import com.nyora.hasan72341.backups.data.NyoraBackupStreams
 import com.nyora.hasan72341.backups.domain.NyoraBackupFiles
 import com.nyora.hasan72341.backups.domain.NyoraRestoreRequest
 import com.nyora.hasan72341.backups.domain.NyoraRestorePayloadStore
+import com.nyora.hasan72341.backups.domain.NyoraRestorePayloadOwner
 import com.nyora.hasan72341.core.nav.AppRouter
 import com.nyora.hasan72341.core.ui.BaseViewModel
 import com.nyora.hasan72341.core.util.ext.getFileDisplayName
@@ -38,8 +39,7 @@ class RestoreViewModel @Inject constructor(
 	private val contentResolver = context.contentResolver
 	private val payloadStore = NyoraRestorePayloadStore(File(context.cacheDir, RESTORE_PAYLOAD_DIRECTORY))
 	private var archiveBytes: ByteArray? = null
-	var preparedPayload: File? = null
-		private set
+	private var payloadOwner: NyoraRestorePayloadOwner? = null
 	private var replaceConfirmed = false
 
 	init {
@@ -48,7 +48,8 @@ class RestoreViewModel @Inject constructor(
 			NyoraBackupFiles.requireSupported(contentResolver.getFileDisplayName(source))
 			archiveBytes = checkNotNull(contentResolver.openInputStream(source)).use(NyoraBackupStreams::read)
 			replan(NyoraRestoreMode.Merge)
-			preparedPayload = payloadStore.prepare(checkNotNull(archiveBytes))
+			payloadOwner?.discard()
+			payloadOwner = NyoraRestorePayloadOwner(payloadStore, payloadStore.prepare(checkNotNull(archiveBytes)))
 		}
 	}
 
@@ -63,6 +64,13 @@ class RestoreViewModel @Inject constructor(
 	}
 
 	fun restoreRequest(): NyoraRestoreRequest = NyoraRestoreRequest(mode.value, replaceConfirmed)
+
+	fun handOffPayload(start: (File) -> Boolean): Boolean = payloadOwner?.handOff(start) ?: false
+
+	fun discardPreparedPayload() {
+		payloadOwner?.discard()
+		payloadOwner = null
+	}
 
 	private suspend fun replan(selectedMode: NyoraRestoreMode) {
 		val bytes = checkNotNull(archiveBytes)

@@ -1,5 +1,6 @@
 package com.nyora.hasan72341.backups.ui.restore
 
+import android.content.DialogInterface
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -94,9 +95,16 @@ class RestoreDialogFragment : AlertDialogFragment<DialogRestoreBinding>(), View.
 	}
 
 	private fun startRestoreService(): Boolean {
-		val context = context ?: return false
-		val payload = viewModel.preparedPayload ?: return false
-		return RestoreService.start(context, payload, viewModel.restoreRequest())
+		val context = context ?: run {
+			viewModel.discardPreparedPayload()
+			return false
+		}
+		return viewModel.handOffPayload { payload -> RestoreService.start(context, payload, viewModel.restoreRequest()) }
+	}
+
+	override fun onDismiss(dialog: DialogInterface) {
+		viewModel.discardPreparedPayload()
+		super.onDismiss(dialog)
 	}
 
 	private fun Date.formatBackupDate(): String = getString(
