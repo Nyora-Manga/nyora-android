@@ -17,12 +17,12 @@ class SourceRenamesTest {
 
 	@Test
 	fun manganatoGgRowsRekeyToTheManganatoIdentity() {
-		assertEquals("7296953528379950235", rekeyedMangaId("data:manganato", "/manga/martial-peak"))
+		assertEquals("7296953528379950235", upgradedMangaId("data:manganato", "/manga/martial-peak"))
 	}
 
 	@Test
 	fun asuraRowsRekeyToTheHostlessIdentity() {
-		assertEquals("3717704593480770000", rekeyedMangaId("data:asurascans", "https://asurascans.com/comics/solo-leveling"))
+		assertEquals("3717704593480770000", upgradedMangaId("data:asurascans", "https://asurascans.com/comics/solo-leveling"))
 	}
 
 	/**
@@ -31,8 +31,8 @@ class SourceRenamesTest {
 	 */
 	@Test
 	fun renamedSpellingsKeepTheirMangaIds() {
-		assertEquals("-9055357649434380553", rekeyedMangaId("data:bananascan_com", "/manga/x"))
-		assertEquals(stableMangaId("bananascan_com", "/manga/x"), rekeyedMangaId("data:bananascan_com", "/manga/x"))
+		assertEquals("-9055357649434380553", upgradedMangaId("data:bananascan_com", "/manga/x"))
+		assertEquals(stableMangaId("bananascan_com", "/manga/x"), upgradedMangaId("data:bananascan_com", "/manga/x"))
 	}
 
 	/**

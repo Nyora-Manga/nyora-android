@@ -38,7 +38,7 @@ class Migration33To34 : Migration(33, 34) {
 		}
 		val settledIds = LinkedHashSet<String>()
 		rows.forEach { (oldId, url) ->
-			val newId = rekeyedMangaId(newSourceName, url)
+			val newId = upgradedMangaId(newSourceName, url)
 			settledIds.add(newId)
 			if (newId == oldId) return@forEach
 			db.execSQL(
@@ -55,50 +55,10 @@ class Migration33To34 : Migration(33, 34) {
 			db.execSQL("DELETE FROM manga WHERE manga_id = ?", arrayOf(oldId))
 		}
 		db.execSQL("UPDATE manga SET source = ? WHERE source = ?", arrayOf(renamedStoredSource, storedSource))
-		settledIds.forEach { mangaId -> renameChapterIds(db, mangaId, newSourceName) }
-	}
-
-	/**
-	 * Re-hashes the chapter ids of one settled manga row.
-	 *
-	 * A chapter id is hashed from the source token too, so a row that moved to a renamed identity
-	 * carries a `chapters` blob, `history.chapter_id`, `bookmarks.chapter_id` and
-	 * `tracks.last_chapter_id` the runtime can no longer produce: the next details refresh rewrites
-	 * the blob from the new token and the stale ids stop resolving. The chapter urls are in the blob
-	 * already, so the new ids are recomputed from there and replayed over the tables that reference
-	 * one. A row whose ids already match is left untouched.
-	 */
-	private fun renameChapterIds(db: SupportSQLiteDatabase, mangaId: String, newSourceName: String) {
-		val storedChapters = db.query("SELECT chapters FROM manga WHERE manga_id = ?", arrayOf(mangaId)).use { cursor ->
-			if (cursor.moveToFirst()) cursor.getString(0) else null
-		} ?: return
-		val rekeyed = rekeyedChapters(newSourceName, storedChapters) ?: return
-		db.execSQL("UPDATE manga SET chapters = ? WHERE manga_id = ?", arrayOf(rekeyed.chapters, mangaId))
-		if (rekeyed.ids.isEmpty()) return
-		CHAPTER_ID_COLUMNS.forEach { (table, column) ->
-			val storedIds = buildList {
-				db.query("SELECT DISTINCT $column FROM $table WHERE manga_id = ?", arrayOf(mangaId)).use { cursor ->
-					while (cursor.moveToNext()) add(cursor.getString(0))
-				}
-			}
-			storedIds.forEach { chapterId ->
-				val newChapterId = rekeyed.ids[chapterId] ?: return@forEach
-				db.execSQL(
-					"UPDATE $table SET $column = ? WHERE manga_id = ? AND $column = ?",
-					arrayOf(newChapterId, mangaId, chapterId),
-				)
-			}
-		}
+		settledIds.forEach { mangaId -> rekeyChapterIds(db, mangaId, newSourceName) }
 	}
 
 	private companion object {
-
-		/** Tables holding a chapter id, none of which constrain it, so a plain update cannot collide. */
-		val CHAPTER_ID_COLUMNS = listOf(
-			"history" to "chapter_id",
-			"bookmarks" to "chapter_id",
-			"tracks" to "last_chapter_id",
-		)
 
 		val DEPENDENT_TABLES = listOf(
 			"history",

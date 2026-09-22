@@ -3,7 +3,6 @@ package com.nyora.hasan72341.core.db.migrations
 import com.nyora.hasan72341.core.model.DataDrivenMangaSource
 import com.nyora.hasan72341.core.parser.datadriven.LEGACY_SOURCE_RENAMES
 import com.nyora.hasan72341.core.parser.datadriven.stableChapterId
-import com.nyora.hasan72341.core.parser.datadriven.stableMangaId
 import org.json.JSONArray
 import java.util.Locale
 
@@ -28,13 +27,6 @@ internal fun renamedSource(stored: String): String? {
 	val renamed = LEGACY_SOURCE_RENAMES[(jsonName ?: stored).lowercase(Locale.ROOT)] ?: return null
 	return if (jsonName == null) renamed else "{\"name\":\"$renamed\"}"
 }
-
-/**
- * The manga id a row of [newSourceName] hashes to once renamed, so the migration can tell the
- * renames that keep the legacy id from the two that do not.
- */
-internal fun rekeyedMangaId(newSourceName: String, url: String): String =
-	stableMangaId(newSourceName.removePrefix(DataDrivenMangaSource.PREFIX), url)
 
 /**
  * A `manga.chapters` blob re-hashed for a renamed source, with the old -> new chapter id map the
