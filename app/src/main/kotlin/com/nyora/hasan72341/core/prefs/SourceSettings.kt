@@ -3,7 +3,9 @@ package com.nyora.hasan72341.core.prefs
 import android.content.Context
 import android.content.SharedPreferences.OnSharedPreferenceChangeListener
 import androidx.core.content.edit
+import com.nyora.hasan72341.core.parser.datadriven.LEGACY_SOURCE_RENAMES
 import com.nyora.hasan72341.core.util.ext.getEnumValue
+import com.nyora.hasan72341.core.util.ext.putAll
 import com.nyora.hasan72341.core.util.ext.putEnumValue
 import com.nyora.hasan72341.core.util.ext.sanitizeHeaderValue
 import com.nyora.hasan72341.mihon.parsers.config.MangaSourceConfig
@@ -18,10 +20,7 @@ import java.io.File
 
 class SourceSettings(context: Context, source: MangaSource) : MangaSourceConfig {
 
-    private val prefs = context.getSharedPreferences(
-        source.name.replace(File.separatorChar, '$'),
-        Context.MODE_PRIVATE,
-    )
+	private val prefs = context.getSharedPreferences(preferencesName(source.name), Context.MODE_PRIVATE)
 
 	var defaultSortOrder: SortOrder?
 		get() = prefs.getEnumValue(KEY_SORT_ORDER, SortOrder::class.java)
@@ -118,5 +117,26 @@ class SourceSettings(context: Context, source: MangaSource) : MangaSourceConfig 
 		const val KEY_NO_CAPTCHA = "no_captcha"
 		const val KEY_SLOWDOWN = "slowdown"
 		const val KEY_SORT_ORDER = "sort_order"
+
+		/**
+		 * Move the settings of the sources database schema 34 renamed into their new file.
+		 *
+		 * Each source keeps its settings in a file named after the source, so a renamed source would
+		 * otherwise come up with its defaults and lose a configured mirror domain or user agent. Only
+		 * a source that has settings and has not been configured under its new name is moved.
+		 */
+		fun migrateRenamedPreferenceFiles(context: Context) {
+			LEGACY_SOURCE_RENAMES.forEach { (oldName, newName) ->
+				val oldPrefs = context.getSharedPreferences(preferencesName(oldName), Context.MODE_PRIVATE)
+				val values = oldPrefs.all
+				if (values.isEmpty()) return@forEach
+				val newPrefs = context.getSharedPreferences(preferencesName(newName), Context.MODE_PRIVATE)
+				if (newPrefs.all.isNotEmpty()) return@forEach
+				newPrefs.edit { putAll(values) }
+				oldPrefs.edit { clear() }
+			}
+		}
+
+		private fun preferencesName(sourceName: String) = sourceName.replace(File.separatorChar, '$')
 	}
 }

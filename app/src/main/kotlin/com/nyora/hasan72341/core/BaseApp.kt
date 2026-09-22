@@ -15,6 +15,7 @@ import com.nyora.hasan72341.core.os.AppValidator
 import com.nyora.hasan72341.core.parser.datadriven.CatalogueRefreshWorker
 import com.nyora.hasan72341.core.parser.datadriven.DataDrivenCatalogue
 import com.nyora.hasan72341.core.prefs.AppSettings
+import com.nyora.hasan72341.core.prefs.SourceSettings
 import com.nyora.hasan72341.core.util.ext.processLifecycleScope
 import com.nyora.hasan72341.local.data.LocalStorageChanges
 import com.nyora.hasan72341.local.data.index.LocalMangaIndex
@@ -80,6 +81,11 @@ open class BaseApp : Application(), Configuration.Provider {
 		// TLS 1.3 support for Android < 10
 		if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
 			Security.insertProviderAt(Conscrypt.newProvider(), 1)
+		}
+		if (!settings.isRenamedSourcePreferencesMigrated) {
+			// Database schema 34 renamed ten sources; their settings files move with them, once.
+			SourceSettings.migrateRenamedPreferenceFiles(this)
+			settings.isRenamedSourcePreferencesMigrated = true
 		}
 		setupActivityLifecycleCallbacks()
 		processLifecycleScope.launch(Dispatchers.IO) {

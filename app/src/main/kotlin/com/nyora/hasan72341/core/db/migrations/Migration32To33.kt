@@ -2,10 +2,15 @@ package com.nyora.hasan72341.core.db.migrations
 
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
-import com.nyora.hasan72341.backups.data.NyoraBackupIdentity
-import com.nyora.hasan72341.backups.data.NyoraSourceIdentity
 import java.util.Locale
 
+/**
+ * Adds the backup tables and retires the JavaScript source names.
+ *
+ * Manga ids are left alone: the local id of a data source is the legacy hash the JavaScript bundle,
+ * desktop and web all stamp, so re-keying the rows here would strand every history, favourite and
+ * download that already resolves through it.
+ */
 class Migration32To33 : Migration(32, 33) {
 	override fun migrate(db: SupportSQLiteDatabase) {
 		db.execSQL(
@@ -18,66 +23,38 @@ class Migration32To33 : Migration(32, 33) {
 				"SELECT 'data:' || lower(replace(substr(source, 4), '_', '-')), enabled, sort_key, added_in, used_at, pinned, cf_state FROM sources WHERE source LIKE 'JS_%'",
 		)
 		db.execSQL("DELETE FROM sources WHERE source LIKE 'JS_%' OR source LIKE 'MIHON_%' OR source LIKE 'mihon:%' OR source GLOB '[0-9]*'")
-		canonicalizeMangaIdentities(db)
+		renameJavaScriptMangaSources(db)
 		db.execSQL(
 			"DELETE FROM manga WHERE source LIKE '%MIHON_%' OR source LIKE '%mihon:%' OR source GLOB '[0-9]*' OR source GLOB '{\"name\":\"[0-9]*\"}'",
 		)
 	}
 
-	private fun canonicalizeMangaIdentities(db: SupportSQLiteDatabase) {
-		val rows = buildList {
-			db.query("SELECT manga_id, url, source FROM manga").use { cursor ->
-				while (cursor.moveToNext()) add(Triple(cursor.getString(0), cursor.getString(1), cursor.getString(2)))
+	/**
+	 * Rewrite the source string of every `JS_` manga row, bare or JSON-wrapped, to its `data:` name.
+	 * There are only ever a handful of distinct source strings, and the rows keep their ids.
+	 */
+	private fun renameJavaScriptMangaSources(db: SupportSQLiteDatabase) {
+		val storedSources = buildList {
+			db.query("SELECT DISTINCT source FROM manga").use { cursor ->
+				while (cursor.moveToNext()) add(cursor.getString(0))
 			}
 		}
-		db.execSQL("PRAGMA defer_foreign_keys = ON")
-		rows.forEach { (oldId, contentKey, storedSource) ->
+		storedSources.forEach { storedSource ->
 			val sourceName = SOURCE_NAME.find(storedSource)?.groupValues?.get(1) ?: storedSource
-			// Retired aliases are accepted only during this bounded database upgrade.
-			val migratedSourceName = if (sourceName.startsWith("JS_")) {
-				"data:" + sourceName.removePrefix("JS_").lowercase(Locale.ROOT).replace('_', '-')
+			if (!sourceName.startsWith("JS_")) return@forEach
+			// The retired alias is accepted only during this bounded database upgrade.
+			val renamed = "data:" + sourceName.removePrefix("JS_").lowercase(Locale.ROOT).replace('_', '-')
+			val renamedStoredSource = if (storedSource.trimStart().startsWith('{')) {
+				"{\"name\":\"$renamed\"}"
 			} else {
-				sourceName
+				renamed
 			}
-			val canonicalSource = NyoraSourceIdentity.canonicalize(migratedSourceName) ?: return@forEach
-			val canonicalId = NyoraBackupIdentity.mangaId(canonicalSource, contentKey)
-			val canonicalStoredSource = if (storedSource.trimStart().startsWith('{')) {
-				"{\"name\":\"$canonicalSource\"}"
-			} else {
-				canonicalSource
-			}
-			if (oldId == canonicalId) {
-				db.execSQL("UPDATE manga SET source = ? WHERE manga_id = ?", arrayOf(canonicalStoredSource, oldId))
-				return@forEach
-			}
-			db.execSQL(
-				"INSERT OR IGNORE INTO manga (manga_id, title, alt_title, url, public_url, rating, nsfw, content_rating, cover_url, large_cover_url, state, author, source, description, tags, chapters, unread, progress) " +
-					"SELECT ?, title, alt_title, url, public_url, rating, nsfw, content_rating, cover_url, large_cover_url, state, author, ?, description, tags, chapters, unread, progress FROM manga WHERE manga_id = ?",
-				arrayOf(canonicalId, canonicalStoredSource, oldId),
-			)
-			DEPENDENT_TABLES.forEach { table ->
-				db.execSQL("UPDATE OR IGNORE $table SET manga_id = ? WHERE manga_id = ?", arrayOf(canonicalId, oldId))
-			}
-			DEPENDENT_TABLES.asReversed().forEach { table ->
-				db.execSQL("DELETE FROM $table WHERE manga_id = ?", arrayOf(oldId))
-			}
-			db.execSQL("DELETE FROM manga WHERE manga_id = ?", arrayOf(oldId))
+			db.execSQL("UPDATE manga SET source = ? WHERE source = ?", arrayOf(renamedStoredSource, storedSource))
 		}
 	}
 
 	private companion object {
-		val SOURCE_NAME = Regex("\\\"name\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
-		val DEPENDENT_TABLES = listOf(
-			"history",
-			"favourites",
-			"preferences",
-			"tracks",
-			"track_logs",
-			"suggestions",
-			"bookmarks",
-			"scrobblings",
-			"stats",
-			"local_index",
-		)
+
+		val SOURCE_NAME = Regex("\"name\"\\s*:\\s*\"([^\"]+)\"")
 	}
 }

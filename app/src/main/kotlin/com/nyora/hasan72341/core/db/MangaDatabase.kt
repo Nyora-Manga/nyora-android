@@ -46,6 +46,7 @@ import com.nyora.hasan72341.core.db.migrations.Migration29To30
 import com.nyora.hasan72341.core.db.migrations.Migration30To31
 import com.nyora.hasan72341.core.db.migrations.Migration31To32
 import com.nyora.hasan72341.core.db.migrations.Migration32To33
+import com.nyora.hasan72341.core.db.migrations.Migration33To34
 import com.nyora.hasan72341.core.db.migrations.Migration2To3
 import com.nyora.hasan72341.core.db.migrations.Migration3To4
 import com.nyora.hasan72341.core.db.migrations.Migration4To5
@@ -77,7 +78,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-const val DATABASE_VERSION = 33
+const val DATABASE_VERSION = 34
 
 @Database(
 	entities = [
@@ -159,6 +160,7 @@ fun getDatabaseMigrations(context: Context): Array<Migration> = arrayOf(
 	Migration30To31(),
 	Migration31To32(),
 	Migration32To33(),
+	Migration33To34(),
 )
 
 fun MangaDatabase(context: Context): MangaDatabase = Room
