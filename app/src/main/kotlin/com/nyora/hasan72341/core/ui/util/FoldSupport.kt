@@ -39,6 +39,33 @@ fun postureOf(
 }
 
 /**
+ * Left and right padding (as `left to right`) that confines content to the larger of the two halves
+ * a vertical hinge splits a container into.
+ *
+ * Padding both outer edges by the hinge width only makes a centred page smaller; the fold keeps
+ * crossing it. Clearing the hinge means giving up the smaller half altogether.
+ */
+fun bookSinglePageInsets(containerWidth: Int, hingeLeft: Int, hingeRight: Int): Pair<Int, Int> =
+	if (hingeLeft >= containerWidth - hingeRight) {
+		0 to (containerWidth - hingeLeft).coerceAtLeast(0)
+	} else {
+		hingeRight.coerceAtLeast(0) to 0
+	}
+
+/**
+ * Offset of the `guideline_hinge` that separates two panes at a vertical hinge, for a layout whose
+ * second pane is pinned to the parent's end.
+ *
+ * ConstraintLayout mirrors a vertical guideline in RTL (`layout_constraintGuide_useRtl` defaults to
+ * true): there `guide_begin` is measured from the right edge and `guide_end` from the left. So the
+ * caller passes this value to `ConstraintSet.setGuidelineBegin` in LTR and to
+ * `ConstraintSet.setGuidelineEnd` in RTL, and either way the guideline lands on the edge of the
+ * hinge that faces the second pane.
+ */
+fun hingeGuidelineOffset(hingeLeft: Int, hingeRight: Int, isRtl: Boolean): Int =
+	(if (isRtl) hingeLeft else hingeRight).coerceAtLeast(0)
+
+/**
  * Current folding feature of the activity's window, in window coordinates.
  */
 class FoldSupport(private val activity: ComponentActivity) {

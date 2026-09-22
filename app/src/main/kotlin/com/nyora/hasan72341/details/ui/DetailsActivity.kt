@@ -71,6 +71,7 @@ import com.nyora.hasan72341.core.ui.sheet.BottomSheetCollapseCallback
 import com.nyora.hasan72341.core.ui.util.FoldSupport
 import com.nyora.hasan72341.core.ui.util.MenuInvalidator
 import com.nyora.hasan72341.core.ui.util.ReversibleActionObserver
+import com.nyora.hasan72341.core.ui.util.hingeGuidelineOffset
 import com.nyora.hasan72341.core.ui.widgets.ChipsView
 import com.nyora.hasan72341.core.util.FileSize
 import com.nyora.hasan72341.core.util.LocaleUtils
@@ -145,7 +146,7 @@ class DetailsActivity :
 	private lateinit var menuProvider: DetailsMenuProvider
 	private lateinit var infoBinding: LayoutDetailsTableBinding
 	private val foldSupport = FoldSupport(this)
-	private var hingeBounds: Rect? = null
+	private var appliedHinge: HingeConstraint? = null
 
 	override val bottomSheet: View?
 		get() = viewBinding.containerBottomSheet
@@ -397,24 +398,40 @@ class DetailsActivity :
 		}
 		val root = viewBinding.root as? ConstraintLayout ?: return
 		val hinge = if (foldSupport.isBook) foldSupport.hingeBoundsIn(root) else null
-		if (hinge == hingeBounds) {
+		// the resolved guideline position depends on the layout direction and the root width as well
+		// as on the hinge, so all three make up the key that skips a redundant re-apply
+		val state = HingeConstraint(hinge, root.width, root.layoutDirection)
+		if (state == appliedHinge) {
 			return
 		}
-		hingeBounds = hinge
+		appliedHinge = state
 		val constraints = ConstraintSet()
 		constraints.clone(root)
 		if (hinge == null) {
 			constraints.connect(R.id.card_chapters, ConstraintSet.START, R.id.appbar, ConstraintSet.END)
 		} else {
-			if (root.layoutDirection == View.LAYOUT_DIRECTION_RTL) {
-				constraints.setGuidelineEnd(R.id.guideline_hinge, (root.width - hinge.left).coerceAtLeast(0))
+			// card_chapters is pinned to the parent end, so it takes the half past the hinge in
+			// layout order: the right half in LTR, the left half in RTL. A vertical guideline is
+			// mirrored in RTL, where guide_end is what is measured from the left edge, so the same
+			// offset goes to setGuidelineBegin in LTR and to setGuidelineEnd in RTL.
+			val isRtl = root.layoutDirection == View.LAYOUT_DIRECTION_RTL
+			val offset = hingeGuidelineOffset(hinge.left, hinge.right, isRtl)
+			if (isRtl) {
+				constraints.setGuidelineEnd(R.id.guideline_hinge, offset)
 			} else {
-				constraints.setGuidelineBegin(R.id.guideline_hinge, hinge.right.coerceAtLeast(0))
+				constraints.setGuidelineBegin(R.id.guideline_hinge, offset)
 			}
 			constraints.connect(R.id.card_chapters, ConstraintSet.START, R.id.guideline_hinge, ConstraintSet.END)
 		}
 		constraints.applyTo(root)
 	}
+
+	/** Everything the chapters-card constraint is derived from, cached to skip redundant re-applies. */
+	private data class HingeConstraint(
+		val hinge: Rect?,
+		val rootWidth: Int,
+		val layoutDirection: Int,
+	)
 
 	private fun onFavoritesChanged(categories: Set<FavouriteCategory>) {
 		val chip = viewBinding.chipFavorite

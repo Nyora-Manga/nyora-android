@@ -49,6 +49,7 @@ import com.nyora.hasan72341.core.ui.dialog.setCheckbox
 import com.nyora.hasan72341.core.ui.util.FoldSupport
 import com.nyora.hasan72341.core.ui.util.MenuInvalidator
 import com.nyora.hasan72341.core.ui.util.Posture
+import com.nyora.hasan72341.core.ui.util.bookSinglePageInsets
 import com.nyora.hasan72341.core.ui.widgets.ZoomControl
 import com.nyora.hasan72341.core.util.IdlingDetector
 import com.nyora.hasan72341.core.util.ext.getThemeDimensionPixelOffset
@@ -122,7 +123,10 @@ class ReaderActivity :
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(ActivityReaderBinding.inflate(layoutInflater))
-        readerManager = ReaderManager(supportFragmentManager, viewBinding.container, settings)
+        // the posture depends on which reader fragment is live, so re-apply it after a swap
+        readerManager = ReaderManager(supportFragmentManager, viewBinding.container, settings) {
+            applyFoldPosture()
+        }
         setDisplayHomeAsUp(isEnabled = true, showUpAsClose = false)
         touchHelper = TapGridDispatcher(viewBinding.root, this)
         scrollTimer = scrollTimerFactory.create(resources, this, this)
@@ -625,8 +629,11 @@ class ReaderActivity :
                         leftPadding = shift.coerceAtLeast(0)
                         rightPadding = (-shift).coerceAtLeast(0)
                     } else {
-                        leftPadding = hinge.width()
-                        rightPadding = hinge.width()
+                        // a single page cannot straddle the fold, so it is confined to the
+                        // larger half instead of being inset from both outer edges
+                        val insets = bookSinglePageInsets(container.width, hinge.left, hinge.right)
+                        leftPadding = insets.first
+                        rightPadding = insets.second
                     }
                 }
 
