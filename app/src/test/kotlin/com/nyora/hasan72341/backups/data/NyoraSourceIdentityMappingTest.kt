@@ -21,8 +21,8 @@ class NyoraSourceIdentityMappingTest {
 	}
 
 	@Test
-	fun resolvesKnownJavascriptAliasOnceToCanonicalCatalogueIdentity() {
-		assertEquals("data:mangadex", NyoraSourceIdentity.canonicalize("JS_MANGADEX"))
+	fun runtimeRequiresCanonicalCatalogueIdentity() {
+		assertEquals(null, NyoraSourceIdentity.canonicalize("JS_MANGADEX"))
 		assertEquals("data:mangadex", NyoraSourceIdentity.canonicalize("data:mangadex"))
 		assertEquals(null, NyoraSourceIdentity.canonicalize("MIHON_123"))
 		assertEquals(null, NyoraSourceIdentity.canonicalize("123"))

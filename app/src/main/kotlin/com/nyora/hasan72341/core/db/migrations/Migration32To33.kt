@@ -4,6 +4,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.nyora.hasan72341.backups.data.NyoraBackupIdentity
 import com.nyora.hasan72341.backups.data.NyoraSourceIdentity
+import java.util.Locale
 
 class Migration32To33 : Migration(32, 33) {
 	override fun migrate(db: SupportSQLiteDatabase) {
@@ -32,7 +33,13 @@ class Migration32To33 : Migration(32, 33) {
 		db.execSQL("PRAGMA defer_foreign_keys = ON")
 		rows.forEach { (oldId, contentKey, storedSource) ->
 			val sourceName = SOURCE_NAME.find(storedSource)?.groupValues?.get(1) ?: storedSource
-			val canonicalSource = NyoraSourceIdentity.canonicalize(sourceName) ?: return@forEach
+			// Retired aliases are accepted only during this bounded database upgrade.
+			val migratedSourceName = if (sourceName.startsWith("JS_")) {
+				"data:" + sourceName.removePrefix("JS_").lowercase(Locale.ROOT).replace('_', '-')
+			} else {
+				sourceName
+			}
+			val canonicalSource = NyoraSourceIdentity.canonicalize(migratedSourceName) ?: return@forEach
 			val canonicalId = NyoraBackupIdentity.mangaId(canonicalSource, contentKey)
 			val canonicalStoredSource = if (storedSource.trimStart().startsWith('{')) {
 				"{\"name\":\"$canonicalSource\"}"

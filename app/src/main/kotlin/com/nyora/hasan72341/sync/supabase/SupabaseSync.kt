@@ -1,6 +1,7 @@
 package com.nyora.hasan72341.sync.supabase
 
 import android.content.Context
+import com.nyora.hasan72341.backups.data.NyoraSourceIdentity
 import com.nyora.hasan72341.core.db.MangaDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -238,9 +239,10 @@ class SupabaseSync @Inject constructor(
         if (entities.isEmpty()) return
         val rows = JSONArray()
         for (s in entities) {
+            val sourceId = NyoraSourceIdentity.canonicalize(s.source) ?: continue
             rows.put(JSONObject().apply {
                 put("user_id", uid)
-                put("source_id", s.source)
+                put("source_id", sourceId)
                 put("is_pinned", s.isPinned)
                 put("is_enabled", s.isEnabled)
                 put("updated_at", now())
@@ -267,6 +269,7 @@ class SupabaseSync @Inject constructor(
         for (fm in entities) {
             val f = fm.favourite
             if (f.createdAt <= cutoff && f.deletedAt <= cutoff) continue
+            val mangaRow = fm.manga.toRemoteManga(uid, now()) ?: continue
             pushedCount++
             rows.put(JSONObject().apply {
                 put("user_id", uid)
@@ -275,7 +278,7 @@ class SupabaseSync @Inject constructor(
                 put("updated_at", now())
                 if (f.deletedAt > 0) put("deleted_at", Instant.ofEpochMilli(f.deletedAt).toString())
             })
-            mangaRows.put(fm.manga.toRemoteManga(uid))
+            mangaRows.put(mangaRow)
         }
         upsert("nyora_manga", mangaRows)
         upsert("nyora_favourite", rows)
@@ -300,8 +303,9 @@ class SupabaseSync @Inject constructor(
         for (wm in entities) {
             val h = wm.history
             if (h.updatedAt <= cutoff && h.deletedAt <= cutoff) continue
+            val mangaRow = wm.manga.toRemoteManga(uid, Instant.ofEpochMilli(h.updatedAt).toString()) ?: continue
             pushedCount++
-            mangaRows.put(wm.manga.toRemoteManga(uid, Instant.ofEpochMilli(h.updatedAt).toString()))
+            mangaRows.put(mangaRow)
             rows.put(JSONObject().apply {
                 put("user_id", uid)
                 put("manga_id", h.mangaId)
@@ -495,7 +499,7 @@ class SupabaseSync @Inject constructor(
             for (i in 0 until arr.length()) {
                 try {
                     val row = arr.getJSONObject(i)
-                    val sourceId = row.getString("source_id")
+                    val sourceId = NyoraSourceIdentity.canonicalize(row.getString("source_id")) ?: continue
                     val isPinned = row.getBoolean("is_pinned")
                     val isEnabled = row.getBoolean("is_enabled")
                     dao.setEnabled(sourceId, isEnabled)
@@ -835,28 +839,6 @@ class SupabaseSync @Inject constructor(
     }
 
     private fun now(): String = Instant.now().toString()
-
-    private fun MangaEntity.toRemoteManga(uid: String, updatedAt: String = now()): JSONObject {
-        return JSONObject().apply {
-            put("user_id", uid)
-            put("id", id)
-            put("title", title)
-            put("alt_titles", altTitles ?: "[]")
-            put("url", url)
-            put("public_url", publicUrl)
-            put("rating", rating)
-            put("is_nsfw", isNsfw)
-            contentRating?.let { put("content_rating", it) }
-            put("cover_url", coverUrl)
-            largeCoverUrl?.let { put("large_cover_url", it) }
-            state?.let { put("state", it) }
-            put("authors", authors ?: "[]")
-            put("source_ref", source)
-            put("description", description)
-            put("tags", tags)
-            put("updated_at", updatedAt)
-        }
-    }
 
     private fun parseEpochMilli(text: String): Long {
         return runCatching { Instant.parse(text).toEpochMilli() }
