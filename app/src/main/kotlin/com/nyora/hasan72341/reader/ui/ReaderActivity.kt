@@ -425,7 +425,12 @@ class ReaderActivity :
 
     override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
         gestureInsets = insets.getInsets(WindowInsetsCompat.Type.systemGestures())
-        val systemBars = insets.getInsets(contentInsetsType)
+        // A fullscreen window is laid out into the cutout on every edge (SHORT_EDGES), so its own
+        // bars are padded by the cutout explicitly on every API: reading it is fine everywhere,
+        // only consuming it is not below API 30, which is why contentInsetsType leaves it out there.
+        val systemBars = insets.getInsets(
+            WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
+        )
         val densityOffset = (12 * resources.displayMetrics.density).toInt()
         
         // Merge top bar with the status bar/notch area

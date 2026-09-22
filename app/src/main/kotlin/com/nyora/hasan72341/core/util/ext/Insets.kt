@@ -1,20 +1,39 @@
 package com.nyora.hasan72341.core.util.ext
 
+import android.os.Build
 import android.view.View
+import androidx.annotation.VisibleForTesting
 import androidx.core.graphics.Insets
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsCompat.Type.InsetsType
 
 /**
- * System bars plus the display cutout.
+ * The inset types content is laid out by: the system bars, plus the display cutout from API 30.
  *
  * Since the app targets API 35+ the window is always laid out under the cutout, so insetting by
  * [WindowInsetsCompat.Type.systemBars] alone leaves content beneath the notch or punch-hole of
  * devices that have one. It is most visible in landscape and on foldable cover screens, where the
  * cutout sits on a side edge and the status bar inset is zero.
+ *
+ * Every consume helper below rebuilds the insets of this mask with [WindowInsetsCompat.Builder],
+ * and below API 30 the builder cannot override the cutout component: `getInsets(displayCutout())`
+ * keeps reading the platform cutout after a "consume", so a parent that padded itself by the mask
+ * and consumed it would hand its children a second, status-bar-high top inset on notched Android 9
+ * and 10 phones. Those APIs therefore use the system bars alone, which covers the cutout wherever
+ * a window is laid out into it in portrait; the only windows laid out into the cutout on every
+ * edge there are the fullscreen ones, which read [WindowInsetsCompat.Type.displayCutout]
+ * explicitly for their own padding.
  */
 val contentInsetsType: Int
-	get() = WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+	get() = contentInsetsTypeFor(Build.VERSION.SDK_INT)
+
+/** See [contentInsetsType]; the pure rule, keyed by [sdkInt] so it can be unit-tested. */
+@VisibleForTesting
+internal fun contentInsetsTypeFor(sdkInt: Int): Int = if (sdkInt >= Build.VERSION_CODES.R) {
+	WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+} else {
+	WindowInsetsCompat.Type.systemBars()
+}
 
 fun Insets.end(view: View): Int {
 	return if (view.isRtl) left else right
