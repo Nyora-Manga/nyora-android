@@ -5,14 +5,19 @@ import androidx.annotation.AnyThread
 import androidx.collection.ArrayMap
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.nyora.hasan72341.core.cache.MemoryContentCache
+import com.nyora.hasan72341.core.model.DataDrivenMangaSource
 import com.nyora.hasan72341.core.model.LocalMangaSource
 import com.nyora.hasan72341.core.model.MangaSourceInfo
 import com.nyora.hasan72341.core.model.TestMangaSource
 import com.nyora.hasan72341.core.model.UnknownMangaSource
+import com.nyora.hasan72341.core.network.MangaHttpClient
+import com.nyora.hasan72341.core.parser.datadriven.DataDrivenCatalogue
+import com.nyora.hasan72341.core.prefs.SourceSettings
 import com.nyora.hasan72341.local.data.LocalMangaRepository
 import com.nyora.hasan72341.js.NyoraJsMangaRepository
 import com.nyora.hasan72341.js.NyoraJsMangaSource
 import com.nyora.hasan72341.mihon.parsers.MangaLoaderContext
+import com.nyora.hasan72341.mihon.parsers.config.ConfigKey
 import com.nyora.hasan72341.mihon.parsers.model.Manga
 import com.nyora.hasan72341.mihon.parsers.model.MangaChapter
 import com.nyora.hasan72341.mihon.parsers.model.MangaListFilter
@@ -22,6 +27,7 @@ import com.nyora.hasan72341.mihon.parsers.model.MangaPage
 import com.nyora.hasan72341.mihon.parsers.model.MangaParserSource
 import com.nyora.hasan72341.mihon.parsers.model.MangaSource
 import com.nyora.hasan72341.mihon.parsers.model.SortOrder
+import okhttp3.OkHttpClient
 import java.lang.ref.WeakReference
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -44,6 +50,13 @@ interface MangaRepository {
 
 	suspend fun getPageUrl(page: MangaPage): String
 
+	/**
+	 * The full image request for [page]: its url plus every header the source needs to serve it.
+	 * Sources that need nothing beyond the page's own headers use this default.
+	 */
+	suspend fun getPageRequest(page: MangaPage): MangaPageRequest =
+		MangaPageRequest(url = getPageUrl(page), headers = page.headers)
+
 	suspend fun getFilterOptions(): MangaListFilterOptions
 
 	suspend fun getRelated(seed: Manga): List<Manga>
@@ -61,6 +74,8 @@ interface MangaRepository {
 		private val contentCache: MemoryContentCache,
 		private val mirrorSwitcher: MirrorSwitcher,
 		private val nyoraJsSourcesManager: com.nyora.hasan72341.js.NyoraJsSourcesManager,
+		private val dataDrivenCatalogue: DataDrivenCatalogue,
+		@MangaHttpClient private val okHttpClient: OkHttpClient,
 	) {
 
 		private val cache = ArrayMap<MangaSource, WeakReference<MangaRepository>>()
@@ -91,6 +106,8 @@ interface MangaRepository {
 				cache = contentCache,
 			)
 
+			is DataDrivenMangaSource -> createDataDrivenRepository(source)
+
 			is NyoraJsMangaSource -> NyoraJsMangaRepository(
 				source = source,
 				cache = contentCache,
@@ -98,6 +115,11 @@ interface MangaRepository {
 			)
 
 			else -> {
+				if (source.name.startsWith(DataDrivenMangaSource.PREFIX)) {
+					dataDrivenCatalogue.find(source.name)?.let {
+						return createDataDrivenRepository(it)
+					}
+				}
 				if (source.name.startsWith("JS_") || source.name.startsWith("data:")) {
 					nyoraJsSourcesManager.getByName(source.name)?.let {
 						return NyoraJsMangaRepository(
@@ -110,5 +132,29 @@ interface MangaRepository {
 				null
 			}
 		}
+
+		private fun createDataDrivenRepository(source: DataDrivenMangaSource): MangaRepository {
+			val settings = SourceSettings(context, source)
+			val domainKey = ConfigKey.Domain(source.domain)
+			return DataDrivenMangaRepository(
+				source = source,
+				okHttpClient = okHttpClient,
+				cache = contentCache,
+				// The user's per-source domain, or null while they are still on the catalogue's.
+				domainOverride = { settings[domainKey].takeIf { it != source.domain } },
+			)
+		}
 	}
 }
+
+/** A repository whose source has an effective domain, which page and cover requests take a Referer from. */
+interface DomainAwareRepository {
+
+	val domain: String
+}
+
+/** An image request for one manga page: the resolved url plus the headers the source serves it under. */
+data class MangaPageRequest(
+	val url: String,
+	val headers: Map<String, String> = emptyMap(),
+)

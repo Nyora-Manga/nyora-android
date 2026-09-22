@@ -2,6 +2,7 @@ package com.nyora.hasan72341.js
 
 import com.nyora.hasan72341.core.cache.MemoryContentCache
 import com.nyora.hasan72341.core.parser.CachingMangaRepository
+import com.nyora.hasan72341.core.parser.DomainAwareRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -27,7 +28,9 @@ class NyoraJsMangaRepository(
     override val source: NyoraJsMangaSource,
     cache: MemoryContentCache,
     private val engine: NyoraJsEngine,
-) : CachingMangaRepository(cache) {
+) : CachingMangaRepository(cache), DomainAwareRepository {
+
+    override val domain: String get() = source.domain
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 

@@ -11,6 +11,8 @@ import androidx.core.content.ContextCompat
 import androidx.core.text.inSpans
 import com.nyora.hasan72341.R
 import com.nyora.hasan72341.core.parser.datadriven.DataDrivenCatalogue
+import com.nyora.hasan72341.core.parser.datadriven.LEGACY_SOURCE_RENAMES
+import com.nyora.hasan72341.core.parser.datadriven.canonicalDataSourceId
 import com.nyora.hasan72341.core.parser.external.ExternalMangaSource
 import com.nyora.hasan72341.core.util.ext.getDisplayName
 import com.nyora.hasan72341.core.util.ext.toLocale
@@ -42,9 +44,18 @@ fun MangaSource(name: String?): MangaSource {
 		TestMangaSource.name -> return TestMangaSource
 	}
 	if (name.startsWith(DataDrivenMangaSource.PREFIX)) {
+		val catalogue = DataDrivenCatalogue.instance
+		if (catalogue != null) {
+			// Rows persisted under a renamed or retired spelling still have to reach their row, or
+			// their history, favourites and downloads read as an unknown source.
+			val id = name.removePrefix(DataDrivenMangaSource.PREFIX)
+			val canonical = DataDrivenMangaSource.PREFIX + canonicalDataSourceId(id)
+			LEGACY_SOURCE_RENAMES[name]?.let { renamed -> catalogue.find(renamed)?.let { return it } }
+			catalogue.find(canonical)?.let { return it }
+		}
 		// An unknown data source is still a data source: keep its identity so a catalogue refresh
 		// can resolve it later instead of orphaning the rows that reference it.
-		return DataDrivenCatalogue.instance?.find(name) ?: AnonymousMangaSource(name)
+		return AnonymousMangaSource(name)
 	}
 	if (name.startsWith("MIHON_") || name.startsWith("mihon:") || name.all(Char::isDigit)) {
 		return UnknownMangaSource
@@ -73,6 +84,8 @@ fun ContentType.isHentai(): Boolean = this == ContentType.HENTAI_MANGA ||
 fun MangaSource.isNsfw(): Boolean = when (val source = unwrap()) {
 	is MangaSourceInfo -> source.mangaSource.isNsfw()
 	is MangaParserSource -> source.contentType.toNyoraContentType().isHentai()
+	// The catalogue marks adult rows explicitly; several of them carry a non-hentai content type.
+	is DataDrivenMangaSource -> source.nsfw || source.contentType.isHentai()
 	is NyoraJsMangaSource -> source.contentType.isHentai()
 	is com.nyora.hasan72341.mihon.parsers.model.ContentSource -> source.contentType.isHentai()
 	else -> false
@@ -141,6 +154,7 @@ fun MangaSource.getTitle(context: Context): String = when (val source = unwrap()
 	LocalMangaSource -> context.getString(R.string.local_storage)
 	TestMangaSource -> context.getString(R.string.test_parser)
 	is ExternalMangaSource -> source.resolveName(context)
+	is DataDrivenMangaSource -> source.title
 	is NyoraJsMangaSource -> source.title
 	else -> when {
 		source.name.startsWith("JS_") -> source.name.removePrefix("JS_").replace('_', ' ')

@@ -38,6 +38,16 @@ data class DataDrivenMangaSource(
 	val legacyParserName: String
 		get() = legacyParserSourceName(catalogueId)
 
+	/**
+	 * Identity is the [name] alone. Source instances are map keys (the repository factory's cache,
+	 * `MemoryContentCache`), and the generated equality would span the whole [config] map, so a
+	 * catalogue refresh that only re-tuned a selector would strand every entry keyed by the old row.
+	 */
+	override fun equals(other: Any?): Boolean =
+		this === other || (other is DataDrivenMangaSource && other.name == name)
+
+	override fun hashCode(): Int = name.hashCode()
+
 	companion object {
 
 		const val PREFIX = "data:"
