@@ -3,6 +3,7 @@ package com.nyora.hasan72341.core.db
 import androidx.room.testing.MigrationTestHelper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import org.json.JSONArray
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -121,9 +122,11 @@ class MangaDatabaseTest {
 		val db = helper.createDatabase(TEST_DB, 33)
 		db.execSQL("INSERT INTO sources VALUES ('data:manganato-gg', 1, 0, 0, 0, 0, 0)")
 		db.execSQL("INSERT INTO sources VALUES ('data:bananascan-com', 1, 1, 0, 0, 0, 0)")
-		db.execSQL("INSERT INTO manga VALUES ('$MANGANATO_GG_ID', 'Peak', NULL, '/manga/martial-peak', '/manga/martial-peak', 0, 0, NULL, '', NULL, NULL, NULL, '{\"name\":\"data:manganato-gg\"}', '', '[]', '[]', 0, 0)")
-		db.execSQL("INSERT INTO manga VALUES ('$BANANASCAN_ID', 'Banana', NULL, '/manga/x', '/manga/x', 0, 0, NULL, '', NULL, NULL, NULL, 'data:bananascan-com', '', '[]', '[]', 0, 0)")
-		db.execSQL("INSERT INTO history VALUES ('$MANGANATO_GG_ID', 7, 8, '', 0, 0, 0, 0, 0)")
+		db.execSQL("INSERT INTO manga VALUES ('$MANGANATO_GG_ID', 'Peak', NULL, '/manga/martial-peak', '/manga/martial-peak', 0, 0, NULL, '', NULL, NULL, NULL, '{\"name\":\"data:manganato-gg\"}', '', '[]', '${chaptersBlob(MANGANATO_GG_CHAPTER_ID, "/chapter/martial-peak-1")}', 0, 0)")
+		db.execSQL("INSERT INTO manga VALUES ('$BANANASCAN_ID', 'Banana', NULL, '/manga/x', '/manga/x', 0, 0, NULL, '', NULL, NULL, NULL, 'data:bananascan-com', '', '[]', '${chaptersBlob(BANANASCAN_CHAPTER_ID, "/manga/x/1")}', 0, 0)")
+		db.execSQL("INSERT INTO history VALUES ('$MANGANATO_GG_ID', 7, 8, '$MANGANATO_GG_CHAPTER_ID', 3, 0, 0, 0, 0)")
+		db.execSQL("INSERT INTO bookmarks VALUES ('$MANGANATO_GG_ID', 'page-1', '$MANGANATO_GG_CHAPTER_ID', 3, 0, '', 0, 0, 0)")
+		db.execSQL("INSERT INTO tracks VALUES ('$MANGANATO_GG_ID', '$MANGANATO_GG_CHAPTER_ID', 2, 0, 0, 0, NULL)")
 		db.close()
 
 		val migrated = helper.runMigrationsAndValidate(TEST_DB, 34, true, Migration33To34())
@@ -134,27 +137,47 @@ class MangaDatabaseTest {
 			assertEquals("data:manganato", cursor.getString(0))
 			assertEquals(false, cursor.moveToNext())
 		}
-		migrated.query("SELECT manga_id, source FROM manga ORDER BY title").use { cursor ->
+		migrated.query("SELECT manga_id, source, chapters FROM manga ORDER BY title").use { cursor ->
 			assertEquals(true, cursor.moveToFirst())
 			assertEquals(BANANASCAN_ID, cursor.getString(0))
 			assertEquals("data:bananascan_com", cursor.getString(1))
+			assertEquals(BANANASCAN_CHAPTER_ID, chapterIdOf(cursor.getString(2)))
 			assertEquals(true, cursor.moveToNext())
 			assertEquals(MANGANATO_ID, cursor.getString(0))
 			assertEquals("{\"name\":\"data:manganato\"}", cursor.getString(1))
+			assertEquals(MANGANATO_CHAPTER_ID, chapterIdOf(cursor.getString(2)))
 			assertEquals(false, cursor.moveToNext())
 		}
-		migrated.query("SELECT manga_id, created_at FROM history").use { cursor ->
+		migrated.query("SELECT manga_id, created_at, chapter_id FROM history").use { cursor ->
 			assertEquals(true, cursor.moveToFirst())
 			assertEquals(MANGANATO_ID, cursor.getString(0))
 			assertEquals(7L, cursor.getLong(1))
+			assertEquals(MANGANATO_CHAPTER_ID, cursor.getString(2))
+			assertEquals(false, cursor.moveToNext())
+		}
+		migrated.query("SELECT manga_id, chapter_id FROM bookmarks").use { cursor ->
+			assertEquals(true, cursor.moveToFirst())
+			assertEquals(MANGANATO_ID, cursor.getString(0))
+			assertEquals(MANGANATO_CHAPTER_ID, cursor.getString(1))
+			assertEquals(false, cursor.moveToNext())
+		}
+		migrated.query("SELECT manga_id, last_chapter_id FROM tracks").use { cursor ->
+			assertEquals(true, cursor.moveToFirst())
+			assertEquals(MANGANATO_ID, cursor.getString(0))
+			assertEquals(MANGANATO_CHAPTER_ID, cursor.getString(1))
 			assertEquals(false, cursor.moveToNext())
 		}
 		migrated.close()
 	}
 
+	private fun chapterIdOf(chapters: String): String = JSONArray(chapters).getJSONObject(0).getString("id")
+
 	private companion object {
 
 		const val TEST_DB = "test-db"
+
+		fun chaptersBlob(id: String, url: String): String =
+			"""[{"id":"$id","title":"Chapter 1","number":1.0,"volume":0,"url":"$url","uploadDate":0}]"""
 
 		/** `legacyMangaId("MANGANATO_GG", "/manga/martial-peak")`, the id the retired row was written with. */
 		const val MANGANATO_GG_ID = "-1040474111546458730"
@@ -164,5 +187,14 @@ class MangaDatabaseTest {
 
 		/** `legacyMangaId("BANANASCAN_COM", "/manga/x")`, unchanged by a delimiter-only rename. */
 		const val BANANASCAN_ID = "-9055357649434380553"
+
+		/** `legacyMangaId("MANGANATO_GG", " chapter /chapter/martial-peak-1")`, the retired stamp. */
+		const val MANGANATO_GG_CHAPTER_ID = "-6598312688466032814"
+
+		/** `legacyMangaId("MANGANATO", " chapter /chapter/martial-peak-1")`, what the runtime produces. */
+		const val MANGANATO_CHAPTER_ID = "-5537510363614834579"
+
+		/** `legacyMangaId("BANANASCAN_COM", " chapter /manga/x/1")`, unchanged by the rename. */
+		const val BANANASCAN_CHAPTER_ID = "-3293541545326521030"
 	}
 }
