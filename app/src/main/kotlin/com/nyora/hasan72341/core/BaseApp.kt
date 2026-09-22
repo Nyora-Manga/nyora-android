@@ -83,7 +83,8 @@ open class BaseApp : Application(), Configuration.Provider {
 			Security.insertProviderAt(Conscrypt.newProvider(), 1)
 		}
 		if (!settings.isRenamedSourcePreferencesMigrated) {
-			// Database schema 34 renamed ten sources; their settings files move with them, once.
+			// Sources renamed by database schema 34, and the DD_/JS_ spellings a shipped install
+			// still holds, keep their settings: the files move with them, once.
 			SourceSettings.migrateRenamedPreferenceFiles(this)
 			settings.isRenamedSourcePreferencesMigrated = true
 		}

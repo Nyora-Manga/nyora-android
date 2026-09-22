@@ -227,10 +227,6 @@
 		<activity
 			android:name="com.nyora.hasan72341.settings.protect.ProtectSetupActivity"
 			android:windowSoftInputMode="adjustResize" />
-		<activity
-			android:name="com.nyora.hasan72341.download.ui.list.DownloadsActivity"
-			android:label="@string/downloads"
-			android:launchMode="singleTop" />
 		<activity android:name="com.nyora.hasan72341.image.ui.ImageActivity" />
 		<activity android:name="com.nyora.hasan72341.favourites.ui.categories.edit.FavouritesCategoryEditActivity" />
 		<activity
