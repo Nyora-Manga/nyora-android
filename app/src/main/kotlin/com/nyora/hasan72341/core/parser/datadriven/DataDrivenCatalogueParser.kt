@@ -3,6 +3,8 @@ package com.nyora.hasan72341.core.parser.datadriven
 import app.nyora.data.engine.EngineRegistry
 import com.nyora.hasan72341.core.SourcePatches
 import com.nyora.hasan72341.core.model.DataDrivenMangaSource
+import com.nyora.hasan72341.core.parser.NatoMangaRepository
+import com.nyora.hasan72341.core.parser.ToonDexMangaRepository
 import com.nyora.hasan72341.mihon.parsers.model.ContentType
 import org.json.JSONArray
 import org.json.JSONObject
@@ -20,6 +22,13 @@ object DataDrivenCatalogueParser {
 
 	/** Engines the registry has no generic implementation for; a native repository serves them. */
 	val NATIVE_BACKED_ENGINES: Set<String> = setOf("mangafire", "mangaplus")
+
+	/**
+	 * Identities a native repository serves by source name rather than by engine key, taken from
+	 * the routing table in `MangaRepository.Factory` so the two cannot drift apart.
+	 */
+	private val NATIVE_BACKED_SOURCE_NAMES: Set<String> =
+		NatoMangaRepository.SOURCE_NAMES + ToonDexMangaRepository.SOURCE_NAMES
 
 	private val ID_REGEX = Regex("[A-Za-z0-9][A-Za-z0-9._-]*")
 
@@ -58,13 +67,16 @@ object DataDrivenCatalogueParser {
 
 	private fun JSONObject.isBrowsable(rowId: String, engineKey: String): Boolean {
 		// A native adapter keeps serving its rows even when the catalogue flags the generic route
-		// dead, which is how the MangaPlus rows survive the loss of their JSON API.
-		val isDead = (optBoolean("broken", false) && engineKey !in NATIVE_BACKED_ENGINES) ||
+		// dead, which is how the MangaPlus rows survive the loss of their JSON API and the Nato
+		// family survives the mangabox chapter list it can no longer read.
+		val isNativelyServed = engineKey in NATIVE_BACKED_ENGINES ||
+			DataDrivenMangaSource.PREFIX + rowId.lowercase(Locale.ROOT) in NATIVE_BACKED_SOURCE_NAMES
+		val isDead = (optBoolean("broken", false) && !isNativelyServed) ||
 			SourcePatches.DEAD_SOURCES.hasDataDrivenPatch(rowId)
 		// A retired identity must never re-enter the catalogue under its old id: its successor row
 		// already owns the manga and history rows that were hashed from it.
 		val isRetired = canonicalDataSourceId(rowId) != rowId.lowercase(Locale.ROOT)
-		val isSupported = EngineRegistry.supports(engineKey) || engineKey in NATIVE_BACKED_ENGINES
+		val isSupported = EngineRegistry.supports(engineKey) || isNativelyServed
 		return !isDead && !isRetired && isSupported
 	}
 

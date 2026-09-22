@@ -51,6 +51,25 @@ class DataDrivenCatalogueParserTest {
 		assertEquals(ContentType.MANGA, sources.getValue("data:komikzoid").contentType)
 	}
 
+	/**
+	 * The published catalogue flags `manganato` broken because the generic mangabox route stopped
+	 * reading its chapter list, but `NatoMangaRepository` serves that row without the engine. A row
+	 * a native adapter serves has to survive the flag exactly as the engine-keyed MangaPlus rows
+	 * do, or the site disappears the first time an install refreshes its catalogue.
+	 */
+	@Test
+	fun rowsANativeAdapterServesSurviveTheBrokenFlag() {
+		val sources = DataDrivenCatalogueParser.parse(brokenRowCatalogue("manganato", engine = "mangabox"))
+		assertEquals(listOf("data:manganato"), sources.map { it.name })
+	}
+
+	/** A broken row no native adapter serves stays dropped: nothing can render it. */
+	@Test
+	fun brokenRowsWithoutANativeAdapterAreDropped() {
+		val sources = DataDrivenCatalogueParser.parse(brokenRowCatalogue("EXAMPLESCANS", engine = "madara"))
+		assertTrue(sources.isEmpty())
+	}
+
 	@Test
 	fun malformedIdIsRejected() {
 		assertThrows(IllegalArgumentException::class.java) { DataDrivenCatalogueParser.parse(catalogue(id = "bad id")) }
@@ -73,6 +92,10 @@ class DataDrivenCatalogueParserTest {
 
 	private fun catalogue(id: String, domain: String = "example.com"): String =
 		"""{"sources":[${row(id, domain)}]}"""
+
+	private fun brokenRowCatalogue(id: String, engine: String): String =
+		"""{"sources":[{"id":"$id","name":"Example","lang":"en","engine":"$engine",""" +
+			""""domain":"example.com","broken":true,"pageSize":24,"config":{}}]}"""
 
 	private fun row(id: String, domain: String = "example.com"): String =
 		"""{"id":"$id","name":"Example","lang":"en","engine":"madara","domain":"$domain","pageSize":24,"config":{}}"""
