@@ -15,6 +15,7 @@ import com.nyora.hasan72341.mihon.parsers.model.MangaPage
 import com.nyora.hasan72341.mihon.parsers.model.MangaSource
 import com.nyora.hasan72341.mihon.parsers.model.MangaSourceRef
 import com.nyora.hasan72341.mihon.parsers.model.SortOrder
+import com.nyora.hasan72341.mihon.parsers.util.runCatchingCancellable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -121,7 +122,7 @@ class MangaPlusMangaRepository(
 	}
 
 	/** The catalogue is alphabetical; "updated" is the ranking endpoint's ordering. */
-	private suspend fun ranking(): List<Manga> = runCatching {
+	private suspend fun ranking(): List<Manga> = runCatchingCancellable {
 		api("/title_list/rankingV2?type=hottest")
 			.message(FIELD_SUCCESS)
 			?.message(FIELD_RANKING)

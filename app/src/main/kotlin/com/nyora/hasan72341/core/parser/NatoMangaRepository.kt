@@ -17,6 +17,7 @@ import com.nyora.hasan72341.mihon.parsers.model.MangaSourceRef
 import com.nyora.hasan72341.mihon.parsers.model.MangaState
 import com.nyora.hasan72341.mihon.parsers.model.MangaTag
 import com.nyora.hasan72341.mihon.parsers.model.SortOrder
+import com.nyora.hasan72341.mihon.parsers.util.runCatchingCancellable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -133,7 +134,7 @@ class NatoMangaRepository(
 		if (!body.trimStart().startsWith("[")) {
 			return Jsoup.parse(body, baseUrl).select(SELECT_CARD).mapNotNull { it.toManga() }
 		}
-		val hits = runCatching { json.decodeFromString<List<SearchDto>>(body) }.getOrNull().orEmpty()
+		val hits = runCatchingCancellable { json.decodeFromString<List<SearchDto>>(body) }.getOrNull().orEmpty()
 		return hits.mapNotNull { dto ->
 			val slug = dto.slug.ifBlank { dto.url.trimEnd('/').substringAfterLast('/') }
 			if (slug.isBlank() || dto.name.isBlank()) return@mapNotNull null
@@ -179,8 +180,25 @@ class NatoMangaRepository(
 		// Chapters come from the JSON API, which Cloudflare does not challenge, while the detail
 		// page HTML does get challenged. Fetch them first and independently so an unsolved (or
 		// expired) clearance costs only the extra metadata, not the whole chapter list.
-		val chapters = runCatching { chapters(path) }.getOrNull().orEmpty()
-		val document = runCatching { fetchDocument(baseUrl + path) }.getOrNull()
+		val chaptersResult = runCatchingCancellable { chapters(path) }
+		val chapters = chaptersResult.getOrNull().orEmpty()
+		val documentResult = runCatchingCancellable { fetchDocument(baseUrl + path) }
+		// Dropping to metadata-only is safe only while the chapter list itself arrived. Returning
+		// normally with zero chapters would have CachingMangaRepository write that result into
+		// MemoryContentCache and re-serve it on every open: a title with no chapters, no error, no
+		// retry and — when the failure was a Cloudflare challenge — no Solve action either.
+		if (chapters.isEmpty()) {
+			// The detail page is the request Cloudflare challenges, so its failure is the one that
+			// carries CloudFlareProtectedException, and with it the Solve action — raise that one.
+			val failure = documentResult.exceptionOrNull() ?: chaptersResult.exceptionOrNull()
+			if (failure != null) {
+				// Context, best effort: kotlinx re-creates an exception as it crosses a coroutine
+				// boundary and the copy carries no suppressed list.
+				chaptersResult.exceptionOrNull()?.takeIf { it !== failure }?.let(failure::addSuppressed)
+				throw failure
+			}
+		}
+		val document = documentResult.getOrNull()
 			?: return@withContext manga.copy(chapters = chapters)
 		val info = document.select("div.manga-info-top li").associate { row ->
 			row.text().substringBefore(':').trim().lowercase(Locale.ROOT) to row.text().substringAfter(':').trim()
@@ -255,7 +273,7 @@ class NatoMangaRepository(
 
 	private suspend fun fetchChapters(slug: String, offset: Int, limit: Int): ChaptersResponse? {
 		val body = fetchBody("$baseUrl/api/manga/$slug/chapters?offset=$offset&limit=$limit", asJson = true)
-		return runCatching { json.decodeFromString<ChaptersResponse>(body) }.getOrNull()
+		return runCatchingCancellable { json.decodeFromString<ChaptersResponse>(body) }.getOrNull()
 	}
 
 	// -- reader ------------------------------------------------------------

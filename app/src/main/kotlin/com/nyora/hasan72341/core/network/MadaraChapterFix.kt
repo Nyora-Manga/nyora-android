@@ -1,10 +1,14 @@
 package com.nyora.hasan72341.core.network
 
 import okhttp3.FormBody
+import okhttp3.HttpUrl
 import okhttp3.Interceptor
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
+import okio.Buffer
+import okio.BufferedSource
+import okio.ByteString.Companion.encodeUtf8
 
 /**
  * Recovers a Madara chapter list when the site's `manga_get_chapters` admin-AJAX action stops
@@ -30,12 +34,39 @@ import okhttp3.ResponseBody.Companion.toResponseBody
  * `ajax/chapters/` answers (`/manga/solo-leveling/` 404s where `/manga/solo-leveling-arise/`
  * returns 200).
  *
- * Ported verbatim from `nyora-shared-datadriven`'s `MadaraChapterFix.kt`.
+ * Ported from `nyora-shared-datadriven`'s `MadaraChapterFix.kt`. The recovery itself is unchanged;
+ * what the phone adds is the gating in [rememberTitleUrl], because here the interceptor runs on the
+ * shared client of a device with a few hundred MiB of heap rather than on a server.
  */
 internal object MadaraChapterFix : Interceptor {
 
 	private const val MAX_CACHED_TITLES = 512
-	private const val MAX_TITLE_PEEK_BYTES = 2L * 1024L * 1024L
+
+	/**
+	 * How far into a document the chapter holder is looked for. A Madara title page loads its
+	 * chapter list over AJAX — that is the whole reason this interceptor exists — so the document
+	 * itself is small; a bigger one is not a title page worth buffering on a phone.
+	 */
+	private const val MAX_TITLE_PEEK_BYTES = 512L * 1024L
+
+	/** Bytes decoded either side of the marker — enough to cover the `<div …>` tag holding it. */
+	private const val HOLDER_WINDOW_BYTES = 2048L
+
+	private val HOLDER_MARKER = "manga-chapters-holder".encodeUtf8()
+
+	/** The marker also appears in scripts referencing the holder, so a few occurrences are tried. */
+	private const val MAX_MARKER_ATTEMPTS = 4
+
+	/** `/manga/<slug>/` is two; a language or region prefix makes three. Past that it is not one. */
+	private const val MAX_TITLE_PATH_SEGMENTS = 4
+
+	/**
+	 * `chapter-12`, `ch_3`, `episode-4-5` — the reader's pages, never a title document. Deliberately
+	 * anchored at both ends: a wasted scan is cheap, while mistaking a title for a chapter would cost
+	 * it the recovery, so `ch4rl0tte` and `chapter-1-the-beginning` are left in.
+	 */
+	private val CHAPTER_SLUG =
+		Regex("""(chapter|chap|ch|episode|ep)[-_]?\d[\d._-]*""", RegexOption.IGNORE_CASE)
 
 	// "<host>|<data-id>" -> the url the title document was served from
 	private val titleUrls = object : LinkedHashMap<String, String>(64, 0.75f, true) {
@@ -86,19 +117,71 @@ internal object MadaraChapterFix : Interceptor {
 	/**
 	 * Caches `data-id` -> url for any Madara title document passing through.
 	 *
-	 * Only HTML that actually carries the chapter holder is read, so page images and JSON never get
-	 * buffered on the way past.
+	 * Only HTML that actually carries the chapter holder is remembered, so page images and JSON
+	 * never get buffered on the way past. This sits on the one client every source shares, so the
+	 * rest of the traffic has to stay cheap too: a request that cannot be a title permalink is not
+	 * looked at, an over-long document is not buffered, and the documents that are scanned are
+	 * searched as bytes — only the few KiB around the marker is ever decoded, instead of building a
+	 * whole second copy of the page as a String beside the one Jsoup is about to build.
 	 */
 	private fun rememberTitleUrl(response: Response): Response {
-		if (!response.isSuccessful || response.request.method != "GET") return response
+		val request = response.request
+		if (!response.isSuccessful || request.method != "GET" || !request.url.couldBeTitlePermalink()) {
+			return response
+		}
 		val contentType = response.body.contentType()
 		if (contentType?.type != "text" || contentType.subtype != "html") return response
+		// -1 when the length is not declared (chunked or compressed); only a declared over-long
+		// body is skipped outright.
+		if (response.body.contentLength() > MAX_TITLE_PEEK_BYTES) return response
 
-		val peeked = response.peekBody(MAX_TITLE_PEEK_BYTES).string()
-		val mangaId = extractMangaId(peeked) ?: return response
-		val key = "${response.request.url.host}|$mangaId"
-		synchronized(titleUrls) { titleUrls[key] = response.request.url.toString() }
+		// A broken body surfaces on the caller's own read of it; scanning must not be what raises it.
+		val mangaId = runCatching { response.body.source().peekMangaId() }.getOrNull() ?: return response
+		val key = "${request.url.host}|$mangaId"
+		synchronized(titleUrls) { titleUrls[key] = request.url.toString() }
 		return response
+	}
+
+	/**
+	 * Madara serves a title as a plain permalink (`/manga/<slug>/`). What this rules out — anything
+	 * with a query (`?s=` search, `?m_orderby=` listings), numbered listing pages and the reader's
+	 * chapter pages — is the bulk of a session's HTML, and a global search fans exactly those out
+	 * across every source at once.
+	 *
+	 * A title whose own slug reads like `chapter-1` loses the recovery; nothing else does.
+	 */
+	private fun HttpUrl.couldBeTitlePermalink(): Boolean {
+		if (query != null) return false
+		val segments = pathSegments.filter { it.isNotEmpty() }
+		if (segments.isEmpty() || segments.size > MAX_TITLE_PATH_SEGMENTS) return false
+		val slug = segments.last()
+		// A title slug always carries letters; the `2` of `/manga/page/2/` does not.
+		return slug.any { it.isLetter() } && !CHAPTER_SLUG.matches(slug)
+	}
+
+	/**
+	 * Byte-level scan for the chapter holder, bounded by [MAX_TITLE_PEEK_BYTES]. Peeking leaves the
+	 * body itself untouched for the caller.
+	 */
+	private fun BufferedSource.peekMangaId(): String? {
+		val peek = peek()
+		var searchFrom = 0L
+		repeat(MAX_MARKER_ATTEMPTS) {
+			// Stops at the marker instead of reading to the bound, so a title page costs only the
+			// bytes up to its holder.
+			val marker = peek.indexOf(HOLDER_MARKER, searchFrom, MAX_TITLE_PEEK_BYTES)
+			if (marker < 0L) return null
+			peek.request(marker + HOLDER_WINDOW_BYTES)
+			val buffered = peek.buffer
+			val from = (marker - HOLDER_WINDOW_BYTES).coerceAtLeast(0L)
+			val to = (marker + HOLDER_WINDOW_BYTES).coerceAtMost(buffered.size)
+			val window = Buffer()
+			buffered.copyTo(window, from, to - from)
+			// A hit in a script that merely names the holder yields no id; the tag itself does.
+			extractMangaId(window.readUtf8())?.let { return it }
+			searchFrom = marker + 1L
+		}
+		return null
 	}
 
 	private fun cachedTitleUrl(host: String, mangaId: String): String? =

@@ -92,7 +92,7 @@ class MangaFireMangaRepository(
 
 		val chapters = ArrayList<MangaChapter>()
 		var page = 1
-		var lastPage: Int
+		var lastPage = 1
 		do {
 			val params = listOf(
 				"language" to langCode,
@@ -102,10 +102,15 @@ class MangaFireMangaRepository(
 				"limit" to CHAPTER_PAGE_SIZE.toString(),
 			)
 			val response = getJson<ApiResponse<ChapterDto>>(protectedApiUrl("/titles/$hid/chapters", params))
+			// `meta.lastPage` is the server's word, re-read on every response, so it alone cannot
+			// end the walk: an API answering with a large last page and no items would hold the
+			// details screen through one sequential request after another. The empty batch and the
+			// cap below are what actually stop it.
+			if (response.items.isEmpty()) break
 			response.items.forEach { chapters.add(it.toChapter(manga.url)) }
 			lastPage = response.meta?.lastPage ?: 1
 			page++
-		} while (page <= lastPage)
+		} while (page <= lastPage && page <= CHAPTER_PAGE_CAP)
 
 		// The API answers newest first (order=desc); the app reads and numbers chapters ascending.
 		chapters.reverse()
@@ -268,6 +273,12 @@ class MangaFireMangaRepository(
 		/** Titles asked for per browse request; the browse offset steps by it. */
 		private const val PAGE_SIZE = 50
 		private const val CHAPTER_PAGE_SIZE = 200
+
+		/**
+		 * Ceiling on the chapter walk: [CHAPTER_PAGE_SIZE] x this is 40,000 chapters, past anything
+		 * the site carries, so it only ever fires on a misbehaving response.
+		 */
+		private const val CHAPTER_PAGE_CAP = 200
 	}
 }
 
