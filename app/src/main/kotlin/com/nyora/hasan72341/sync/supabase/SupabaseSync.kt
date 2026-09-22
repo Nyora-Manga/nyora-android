@@ -708,8 +708,8 @@ class SupabaseSync @Inject constructor(
                         ?: row.getString("source_ref")
                     val description = row.optString("description", "")
                     val tags = row.optString("tags", "[]")
-                    
-                    mangaDao.upsert(com.nyora.hasan72341.core.db.entity.MangaEntity(
+
+                    val pulled = MangaEntity(
                         id = mangaId,
                         title = title,
                         altTitles = altTitles,
@@ -724,8 +724,12 @@ class SupabaseSync @Inject constructor(
                         authors = authors,
                         source = source,
                         description = description,
-                        tags = tags
-                    ))
+                        tags = tags,
+                    )
+                    // Room's upsert writes every column and the cloud carries no chapter list,
+                    // unread count or progress: the row this device holds supplies them, which is
+                    // also what pullHistory/pullBookmarks re-key a shipped chapter id against.
+                    mangaDao.upsert(pulledMangaWithLocalReaderState(pulled, mangaDao.find(mangaId)))
                 } catch (e: Exception) {
                     android.util.Log.e("SupabaseSync", "pullManga row failed", e)
                 }
@@ -915,8 +919,14 @@ class SupabaseSync @Inject constructor(
     /**
      * The chapter id a pulled history or bookmark row is stored under. A data-source row whose
      * chapter id is not a hash came from a shipped build; it is re-keyed from the chapter url that
-     * id carries when the manga's stored chapters know that url, and otherwise stored as it came,
-     * which the log records because the reader cannot resume from it.
+     * id carries when the manga's stored chapters know that url, which they do whenever this
+     * device has loaded the manga's details: [pullManga] runs first and carries the stored chapter
+     * list forward ([pulledMangaWithLocalReaderState]) instead of resetting it.
+     *
+     * On a fresh install, or a Restore from cloud of a manga this device has never opened, no
+     * chapter list is stored yet, so the id is kept as pushed and the log records it: the reader
+     * cannot resume from that row (its chapter id reads as 0) until a later pull selects the row
+     * again after the details have been loaded, which a Restore from cloud does for every row.
      */
     private suspend fun localChapterId(table: String, remoteMangaId: String, mangaId: String, remoteChapterId: String): String {
         val sourceId = pulledMangaSourceIds[remoteMangaId]

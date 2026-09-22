@@ -1,7 +1,12 @@
 package com.nyora.hasan72341.sync.supabase
 
+import com.nyora.hasan72341.core.db.entity.MangaEntity
+import com.nyora.hasan72341.core.db.entity.toEntity
 import com.nyora.hasan72341.core.parser.datadriven.stableChapterId
 import com.nyora.hasan72341.core.parser.datadriven.stableMangaId
+import com.nyora.hasan72341.mihon.parsers.model.Manga
+import com.nyora.hasan72341.mihon.parsers.model.MangaChapter
+import com.nyora.hasan72341.mihon.parsers.model.MangaSourceRef
 import org.json.JSONArray
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -281,4 +286,81 @@ class SupabasePullAliasTest {
 		assertEquals(1, newestCanonicalSourcePrefs(listOf(dd, js)).size)
 		assertEquals(emptyList<PulledSourcePref>(), newestCanonicalSourcePrefs(emptyList()))
 	}
+
+	// -- manga rows --
+
+	@Test
+	fun `a pulled manga row carries the local chapters, unread and progress forward`() {
+		val local = localManga(title = "Old title", chapterUrl = "/manga/x/chapter-1", unread = 3, progress = 0.5f)
+		val pulled = pulledManga(title = "New title")
+
+		val stored = pulledMangaWithLocalReaderState(pulled, local)
+
+		assertEquals("New title", stored.title)
+		assertEquals(local.chapters, stored.chapters)
+		assertEquals(3, stored.unread)
+		assertEquals(0.5f, stored.progress, 0f)
+		// Nothing but the reader state comes from the local row.
+		assertEquals(pulled.copy(chapters = local.chapters, unread = 3, progress = 0.5f), stored)
+	}
+
+	@Test
+	fun `a pulled manga this device has never stored keeps the entity defaults`() {
+		val pulled = pulledManga(title = "New title")
+
+		val stored = pulledMangaWithLocalReaderState(pulled, null)
+
+		assertEquals(pulled, stored)
+		assertEquals("[]", stored.chapters)
+		assertEquals(0, stored.unread)
+	}
+
+	/** The chapters blob is the one `Manga.toEntity()` writes, so the re-key reads the real shape. */
+	@Test
+	fun `a shipped chapter id resolves through the chapters the pulled row carries forward`() {
+		val url = "/manga/x/chapter-1"
+		val stored = pulledMangaWithLocalReaderState(pulledManga(title = "x"), localManga(title = "x", chapterUrl = url))
+		val storedUrls = { storedChapterUrls(stored.chapters) }
+
+		assertEquals(setOf(url), storedUrls())
+		assertEquals(stableChapterId("hiperdex", url), pulledChapterIdAlias(url, "data:hiperdex", storedUrls))
+		assertEquals(stableChapterId("hiperdex", url), pulledChapterIdAlias("DD_HIPERDEX|chapter|$url", "data:hiperdex", storedUrls))
+	}
+
+	/** Fresh install, or a manga never opened on this device: nothing to re-key against, the id is kept as pushed. */
+	@Test
+	fun `a shipped chapter id of a manga without stored chapters cannot be settled`() {
+		val stored = pulledMangaWithLocalReaderState(pulledManga(title = "x"), null)
+
+		assertNull(pulledChapterIdAlias("/manga/x/chapter-1", "data:hiperdex") { storedChapterUrls(stored.chapters) })
+	}
+
+	/** What [SupabaseSync.pullManga] builds from a cloud row: metadata only, entity defaults elsewhere. */
+	private fun pulledManga(title: String) = MangaEntity(
+		id = stableMangaId("hiperdex", "/manga/x"),
+		title = title,
+		altTitles = null,
+		url = "/manga/x",
+		publicUrl = "https://site/manga/x",
+		rating = -1f,
+		isNsfw = false,
+		contentRating = null,
+		coverUrl = "",
+		largeCoverUrl = null,
+		state = null,
+		authors = null,
+		source = """{"name":"data:hiperdex"}""",
+	)
+
+	/** The row this device stored after loading the details, through the real serializer. */
+	private fun localManga(title: String, chapterUrl: String, unread: Int = 0, progress: Float = 0f) = Manga(
+		id = stableMangaId("hiperdex", "/manga/x"),
+		title = title,
+		url = "/manga/x",
+		publicUrl = "https://site/manga/x",
+		source = MangaSourceRef.Data("data:hiperdex"),
+		chapters = listOf(MangaChapter(id = stableChapterId("hiperdex", chapterUrl), title = "Chapter 1", number = 1f, url = chapterUrl)),
+		unread = unread,
+		progress = progress,
+	).toEntity()
 }

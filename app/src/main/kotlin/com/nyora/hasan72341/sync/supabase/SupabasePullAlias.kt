@@ -1,6 +1,7 @@
 package com.nyora.hasan72341.sync.supabase
 
 import com.nyora.hasan72341.backups.data.NyoraSourceIdentity
+import com.nyora.hasan72341.core.db.entity.MangaEntity
 import com.nyora.hasan72341.core.db.migrations.upgradedStoredSourceName
 import com.nyora.hasan72341.core.model.DataDrivenMangaSource
 import com.nyora.hasan72341.core.parser.datadriven.stableChapterId
@@ -15,6 +16,11 @@ import org.json.JSONArray
  * server-generated id, or under a source spelling the catalogue has since renamed, has to be
  * re-hashed before anything local is keyed by it. Push needs none of this because local ids are
  * canonical already.
+ *
+ * The same file holds the two rules that keep a pull from destroying what only this device knows:
+ * a pulled manga row carries the local chapter list forward ([pulledMangaWithLocalReaderState]),
+ * which is what a shipped chapter id is re-keyed against, and prefs pushed under several spellings
+ * of one source apply once ([newestCanonicalSourcePrefs]).
  */
 
 /** Delimiter of the `<source>|chapter|<url>` chapter id the shipped builds' native adapters wrote. */
@@ -123,6 +129,18 @@ internal fun pulledChapterIdAlias(
 	if (url !in storedChapterUrls()) return null
 	return stableChapterId(sourceId.removePrefix(DataDrivenMangaSource.PREFIX), url)
 }
+
+/**
+ * The manga row a pull stores: the cloud metadata over the reader state only this device holds.
+ *
+ * The cloud row carries no chapter list, unread count or progress, and Room's upsert writes every
+ * column, so [pulled] has to carry the [local] row's `chapters`, `unread` and `progress` forward or
+ * the cached chapter list the reader resumes from collapses to `[]` on every sync, and with it the
+ * chapter urls [pulledChapterIdAlias] re-keys a shipped chapter id against. A manga this device
+ * has never stored ([local] null) keeps the entity defaults until its details are loaded.
+ */
+internal fun pulledMangaWithLocalReaderState(pulled: MangaEntity, local: MangaEntity?): MangaEntity =
+	if (local == null) pulled else pulled.copy(chapters = local.chapters, unread = local.unread, progress = local.progress)
 
 /** The chapter urls of a stored `manga.chapters` blob; empty when the blob cannot be read. */
 internal fun storedChapterUrls(chaptersBlob: String): Set<String> {
