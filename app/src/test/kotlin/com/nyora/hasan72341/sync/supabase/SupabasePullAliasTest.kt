@@ -247,4 +247,38 @@ class SupabasePullAliasTest {
 		)
 		assertNull(newestCanonicalAlias(emptyList()))
 	}
+
+	// -- source prefs --
+
+	/** The shipped builds pushed `DD_`/`JS_` rows; this build pushes `data:`; all three name one local source. */
+	@Test
+	fun `source prefs pushed under several spellings of one source apply once, newest first`() {
+		val stale = PulledSourcePref("DD_HIPERDEX", "data:hiperdex", isPinned = true, isEnabled = false, updatedAt = 20L)
+		val current = PulledSourcePref("data:hiperdex", "data:hiperdex", isPinned = false, isEnabled = true, updatedAt = 10L)
+		val other = PulledSourcePref("data:manganato", "data:manganato", isPinned = false, isEnabled = false, updatedAt = 5L)
+
+		assertEquals(listOf(stale, other), newestCanonicalSourcePrefs(listOf(current, stale, other)))
+		assertEquals(listOf(other, stale), newestCanonicalSourcePrefs(listOf(other, stale, current)))
+		assertEquals(listOf(current), newestCanonicalSourcePrefs(listOf(stale.copy(updatedAt = 1L), current)))
+	}
+
+	@Test
+	fun `an exact tie between source pref rows prefers the canonical spelling`() {
+		val shipped = PulledSourcePref("JS_HIPERDEX", "data:hiperdex", isPinned = true, isEnabled = false, updatedAt = 20L)
+		val canonical = PulledSourcePref("data:hiperdex", "data:hiperdex", isPinned = false, isEnabled = true, updatedAt = 20L)
+
+		assertEquals(listOf(canonical), newestCanonicalSourcePrefs(listOf(shipped, canonical)))
+		assertEquals(listOf(canonical), newestCanonicalSourcePrefs(listOf(canonical, shipped)))
+	}
+
+	/** Rows without a timestamp all read as 0; the choice must still not depend on backend order. */
+	@Test
+	fun `two shipped spellings that tie collapse the same way whichever arrived last`() {
+		val dd = PulledSourcePref("DD_HIPERDEX", "data:hiperdex", isPinned = false, isEnabled = false, updatedAt = 0L)
+		val js = PulledSourcePref("JS_HIPERDEX", "data:hiperdex", isPinned = true, isEnabled = true, updatedAt = 0L)
+
+		assertEquals(newestCanonicalSourcePrefs(listOf(dd, js)), newestCanonicalSourcePrefs(listOf(js, dd)))
+		assertEquals(1, newestCanonicalSourcePrefs(listOf(dd, js)).size)
+		assertEquals(emptyList<PulledSourcePref>(), newestCanonicalSourcePrefs(emptyList()))
+	}
 }

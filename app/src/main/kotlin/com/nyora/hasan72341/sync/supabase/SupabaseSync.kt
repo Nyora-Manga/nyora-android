@@ -516,22 +516,37 @@ class SupabaseSync @Inject constructor(
     }
 
     private suspend fun pullSourcePrefs(cutoff: String) {
-        val text = fetch("nyora_source_prefs?select=source_id,is_pinned,is_enabled", cutoff) ?: return
+        val text = fetch("nyora_source_prefs?select=source_id,is_pinned,is_enabled,updated_at", cutoff) ?: return
         runCatching {
             val arr = JSONArray(text)
             val dao = database.getSourcesDao()
+            val prefs = ArrayList<PulledSourcePref>(arr.length())
             for (i in 0 until arr.length()) {
                 try {
                     val row = arr.getJSONObject(i)
+                    val sourceId = row.getString("source_id")
                     // Shipped builds pushed their DD_/JS_ spellings; the same upgrade the pull
                     // applies to manga rows brings those prefs to the source they belong to.
-                    val sourceId = canonicalPulledSourceId(row.getString("source_id")) ?: continue
-                    val isPinned = row.getBoolean("is_pinned")
-                    val isEnabled = row.getBoolean("is_enabled")
-                    dao.setEnabled(sourceId, isEnabled)
-                    dao.setPinned(sourceId, isPinned)
+                    val canonicalSourceId = canonicalPulledSourceId(sourceId) ?: continue
+                    prefs += PulledSourcePref(
+                        sourceId = sourceId,
+                        canonicalSourceId = canonicalSourceId,
+                        isPinned = row.getBoolean("is_pinned"),
+                        isEnabled = row.getBoolean("is_enabled"),
+                        updatedAt = parseEpochMilliOrZero(row.optString("updated_at", "")),
+                    )
                 } catch (e: Exception) {
                     android.util.Log.e("SupabaseSync", "pullSourcePrefs row failed", e)
+                }
+            }
+            // A stale DD_/JS_ row and the current data: row of one source apply once, newest
+            // first, so backend row order cannot re-enable a source disabled here or hide one.
+            for (pref in newestCanonicalSourcePrefs(prefs)) {
+                try {
+                    dao.setEnabled(pref.canonicalSourceId, pref.isEnabled)
+                    dao.setPinned(pref.canonicalSourceId, pref.isPinned)
+                } catch (e: Exception) {
+                    android.util.Log.e("SupabaseSync", "pullSourcePrefs ${pref.canonicalSourceId} failed", e)
                 }
             }
         }.onFailure { android.util.Log.e("SupabaseSync", "pullSourcePrefs failed", it) }

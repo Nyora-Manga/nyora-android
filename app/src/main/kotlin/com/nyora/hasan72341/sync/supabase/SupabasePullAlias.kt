@@ -153,3 +153,36 @@ internal fun newestCanonicalAlias(candidates: List<CanonicalAliasCandidate>): Ca
 			.thenBy { if (it.remoteId == it.canonicalId) 1 else 0 }
 			.thenBy { it.remoteId },
 	)
+
+/**
+ * A `nyora_source_prefs` row as pulled.
+ *
+ * @property sourceId the `source_id` as the pushing client spelled it.
+ * @property canonicalSourceId the `data:` source it applies to ([canonicalPulledSourceId]).
+ * @property updatedAt the row's `updated_at` in epoch millis, 0 when the row carries none.
+ */
+internal data class PulledSourcePref(
+	val sourceId: String,
+	val canonicalSourceId: String,
+	val isPinned: Boolean,
+	val isEnabled: Boolean,
+	val updatedAt: Long,
+)
+
+/**
+ * One pref per local source after the rows of every spelling a client pushed for it (the shipped
+ * builds' `DD_`/`JS_` and the current `data:`) collapse onto [PulledSourcePref.canonicalSourceId].
+ *
+ * The same order-independent rule as [newestCanonicalAlias]: the newest `updated_at` wins, an
+ * exact tie goes to the row already spelled canonically, then to the lowest spelling, so a stale
+ * row can never re-enable or hide a source depending on which row the backend returned last.
+ * Sources keep the order they were first seen in.
+ */
+internal fun newestCanonicalSourcePrefs(prefs: List<PulledSourcePref>): List<PulledSourcePref> =
+	prefs.groupBy { it.canonicalSourceId }.values.mapNotNull { candidates ->
+		candidates.maxWithOrNull(
+			compareBy<PulledSourcePref> { it.updatedAt }
+				.thenBy { if (it.sourceId == it.canonicalSourceId) 1 else 0 }
+				.thenBy { it.sourceId },
+		)
+	}
