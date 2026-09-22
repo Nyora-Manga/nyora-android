@@ -38,6 +38,7 @@ import com.nyora.hasan72341.core.ui.widgets.TipView
 import com.nyora.hasan72341.core.util.ShareHelper
 import com.nyora.hasan72341.core.util.ext.addMenuProvider
 import com.nyora.hasan72341.core.util.ext.consumeAll
+import com.nyora.hasan72341.core.util.ext.contentInsetsType
 import com.nyora.hasan72341.core.util.ext.findAppCompatDelegate
 import com.nyora.hasan72341.core.util.ext.observe
 import com.nyora.hasan72341.core.util.ext.observeEvent
@@ -132,7 +133,7 @@ abstract class MangaListFragment :
 	}
 
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val typeMask = WindowInsetsCompat.Type.systemBars()
+		val typeMask = contentInsetsType
 		val barsInsets = insets.getInsets(typeMask)
 		val basePadding = v.resources.getDimensionPixelOffset(R.dimen.list_spacing_normal)
 		viewBinding?.recyclerView?.setPadding(

@@ -1,9 +1,39 @@
 package com.nyora.hasan72341.core.util.ext
 
+import android.os.Build
 import android.view.View
+import androidx.annotation.VisibleForTesting
 import androidx.core.graphics.Insets
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsCompat.Type.InsetsType
+
+/**
+ * The inset types content is laid out by: the system bars, plus the display cutout from API 30.
+ *
+ * Since the app targets API 35+ the window is always laid out under the cutout, so insetting by
+ * [WindowInsetsCompat.Type.systemBars] alone leaves content beneath the notch or punch-hole of
+ * devices that have one. It is most visible in landscape and on foldable cover screens, where the
+ * cutout sits on a side edge and the status bar inset is zero.
+ *
+ * Every consume helper below rebuilds the insets of this mask with [WindowInsetsCompat.Builder],
+ * and below API 30 the builder cannot override the cutout component: `getInsets(displayCutout())`
+ * keeps reading the platform cutout after a "consume", so a parent that padded itself by the mask
+ * and consumed it would hand its children a second, status-bar-high top inset on notched Android 9
+ * and 10 phones. Those APIs therefore use the system bars alone, which covers the cutout wherever
+ * a window is laid out into it in portrait; the only windows laid out into the cutout on every
+ * edge there are the fullscreen ones, which read [WindowInsetsCompat.Type.displayCutout]
+ * explicitly for their own padding.
+ */
+val contentInsetsType: Int
+	get() = contentInsetsTypeFor(Build.VERSION.SDK_INT)
+
+/** See [contentInsetsType]; the pure rule, keyed by [sdkInt] so it can be unit-tested. */
+@VisibleForTesting
+internal fun contentInsetsTypeFor(sdkInt: Int): Int = if (sdkInt >= Build.VERSION_CODES.R) {
+	WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+} else {
+	WindowInsetsCompat.Type.systemBars()
+}
 
 fun Insets.end(view: View): Int {
 	return if (view.isRtl) left else right
@@ -13,18 +43,16 @@ fun Insets.start(view: View): Int {
 	return if (view.isRtl) right else left
 }
 
-@Deprecated("")
-val WindowInsetsCompat.systemBarsInsets: Insets
-	get() = getInsets(WindowInsetsCompat.Type.systemBars())
+val WindowInsetsCompat.contentInsets: Insets
+	get() = getInsets(contentInsetsType)
 
-@Deprecated("")
-fun WindowInsetsCompat.consumeSystemBarsInsets(
+fun WindowInsetsCompat.consumeContentInsets(
 	left: Boolean = false,
 	top: Boolean = false,
 	right: Boolean = false,
 	bottom: Boolean = false,
 ): WindowInsetsCompat {
-	val barsInsets = systemBarsInsets
+	val barsInsets = contentInsets
 	val insets = Insets.of(
 		if (left) 0 else barsInsets.left,
 		if (top) 0 else barsInsets.top,
@@ -32,7 +60,7 @@ fun WindowInsetsCompat.consumeSystemBarsInsets(
 		if (bottom) 0 else barsInsets.bottom,
 	)
 	return WindowInsetsCompat.Builder(this)
-		.setInsets(WindowInsetsCompat.Type.systemBars(), insets)
+		.setInsets(contentInsetsType, insets)
 		.build()
 }
 
@@ -62,17 +90,15 @@ fun WindowInsetsCompat.consumeAll(
 	.setInsets(typeMask, Insets.NONE)
 	.build()
 
-@Deprecated("")
-fun WindowInsetsCompat.consumeSystemBarsInsets(
+fun WindowInsetsCompat.consumeContentInsets(
 	view: View,
 	start: Boolean = false,
 	top: Boolean = false,
 	end: Boolean = false,
 	bottom: Boolean = false,
-): WindowInsetsCompat = consume(view, WindowInsetsCompat.Type.systemBars(), start, top, end, bottom)
+): WindowInsetsCompat = consume(view, contentInsetsType, start, top, end, bottom)
 
-@Deprecated("")
-fun WindowInsetsCompat.consumeAllSystemBarsInsets() = consumeAll(WindowInsetsCompat.Type.systemBars())
+fun WindowInsetsCompat.consumeAllContentInsets() = consumeAll(contentInsetsType)
 
 @Deprecated("")
 fun Insets.consume(

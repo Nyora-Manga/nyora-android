@@ -17,6 +17,7 @@ import com.nyora.hasan72341.core.exceptions.resolve.DialogErrorObserver
 import com.nyora.hasan72341.core.ui.BaseFragment
 import com.nyora.hasan72341.core.util.ext.consumeAll
 import com.nyora.hasan72341.core.util.ext.container
+import com.nyora.hasan72341.core.util.ext.contentInsetsType
 import com.nyora.hasan72341.core.util.ext.end
 import com.nyora.hasan72341.core.util.ext.observe
 import com.nyora.hasan72341.core.util.ext.observeEvent
@@ -58,7 +59,7 @@ class ChangelogFragment : BaseFragment<FragmentChangelogBinding>() {
 		v: View,
 		insets: WindowInsetsCompat
 	): WindowInsetsCompat {
-		val typeMask = WindowInsetsCompat.Type.systemBars()
+		val typeMask = contentInsetsType
 		val barsInsets = insets.getInsets(typeMask)
 		val isTablet = !resources.getBoolean(R.bool.is_tablet)
 		val isMaster = container?.id == R.id.container_master

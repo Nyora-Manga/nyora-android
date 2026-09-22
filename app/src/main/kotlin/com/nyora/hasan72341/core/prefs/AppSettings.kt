@@ -634,6 +634,11 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
 	val isAutoLocalChaptersCleanupEnabled: Boolean
 		get() = prefs.getBoolean(KEY_CHAPTERS_CLEAR_AUTO, false)
 
+	/** One-shot guard: the per-source settings of the sources schema 34 renamed move exactly once. */
+	var isRenamedSourcePreferencesMigrated: Boolean
+		get() = prefs.getBoolean(KEY_SOURCE_PREFS_RENAMED, false)
+		set(value) = prefs.edit { putBoolean(KEY_SOURCE_PREFS_RENAMED, value) }
+
 	fun isPagesCropEnabled(mode: ReaderMode): Boolean {
 		val rawValue = prefs.getStringSet(KEY_READER_CROP, emptySet())
 		if (rawValue.isNullOrEmpty()) {
@@ -898,6 +903,8 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
 		const val KEY_CLEAR_MANGA_DATA = "manga_data_clear"
 		const val KEY_STORAGE_USAGE = "storage_usage"
 		const val KEY_WEBVIEW_CLEAR = "webview_clear"
+
+		private const val KEY_SOURCE_PREFS_RENAMED = "source_prefs_renamed_v34"
 
 		// old keys are for migration only
 		private const val KEY_IMAGES_PROXY_OLD = "images_proxy"

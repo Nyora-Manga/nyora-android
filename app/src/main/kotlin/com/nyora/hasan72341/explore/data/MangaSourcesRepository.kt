@@ -7,21 +7,24 @@ import com.nyora.hasan72341.core.LocalizedAppContext
 import com.nyora.hasan72341.core.db.MangaDatabase
 import com.nyora.hasan72341.core.db.dao.MangaSourcesDao
 import com.nyora.hasan72341.core.db.entity.MangaSourceEntity
+import com.nyora.hasan72341.core.model.DataDrivenMangaSource
 import com.nyora.hasan72341.core.model.MangaSourceInfo
 import com.nyora.hasan72341.core.model.getTitle
 import com.nyora.hasan72341.core.model.isNsfw
 import com.nyora.hasan72341.core.model.getContentTypeOrNull
+import com.nyora.hasan72341.core.parser.datadriven.DataDrivenCatalogue
+import com.nyora.hasan72341.core.parser.datadriven.findCanonical
 import com.nyora.hasan72341.core.prefs.AppSettings
 import com.nyora.hasan72341.core.prefs.observeAsFlow
 import com.nyora.hasan72341.core.ui.util.ReversibleHandle
 import com.nyora.hasan72341.core.util.ext.flattenLatest
-import com.nyora.hasan72341.js.NyoraJsMangaSource
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
+import com.nyora.hasan72341.mihon.parsers.model.ContentSource
 import com.nyora.hasan72341.mihon.parsers.model.ContentType
 import com.nyora.hasan72341.mihon.parsers.model.MangaSource
 import com.nyora.hasan72341.mihon.parsers.network.CloudFlareHelper
@@ -36,17 +39,17 @@ class MangaSourcesRepository @Inject constructor(
     @LocalizedAppContext private val context: Context,
     private val db: MangaDatabase,
     private val settings: AppSettings,
-    private val nyoraJsSourcesManager: com.nyora.hasan72341.js.NyoraJsSourcesManager,
+    private val catalogue: DataDrivenCatalogue,
 ) {
 
 	private val isNewSourcesAssimilated = AtomicBoolean(false)
 	private val dao: MangaSourcesDao
 		get() = db.getSourcesDao()
 
-	// JS parsers are the only first-class source family in the app. Native Nyora/Mihon
-	// sources are intentionally not surfaced through the app source catalog.
-	val allMangaSources: Set<NyoraJsMangaSource>
-		get() = nyoraJsSourcesManager.getJsMangaSources().toSet()
+	// The data-driven catalogue is the only first-class source family in the app. Native
+	// Nyora/Mihon sources are intentionally not surfaced through the app source catalog.
+	val allMangaSources: Set<DataDrivenMangaSource>
+		get() = catalogue.sources.toSet()
 
 	suspend fun getEnabledSources(): List<MangaSource> {
 		assimilateNewSources()
@@ -106,7 +109,7 @@ class MangaSourcesRepository @Inject constructor(
 		}
 
 		if (locale != null) {
-			sources.retainAll { it is NyoraJsMangaSource && it.locale == locale }
+			sources.retainAll { it is ContentSource && it.locale == locale }
 		}
 		if (types.isNotEmpty()) {
 			sources.retainAll { it.getContentTypeOrNull() in types }
@@ -163,9 +166,10 @@ class MangaSourcesRepository @Inject constructor(
 
 	fun observeAll(): Flow<List<Pair<MangaSource, Boolean>>> = dao.observeAll().map { entities ->
 		val result = ArrayList<Pair<MangaSource, Boolean>>(entities.size)
+		val known = allMangaSources
 		for (entity in entities) {
 			val source = entity.source.toMangaSourceOrNull() ?: continue
-			if (source in allMangaSources) {
+			if (source in known) {
 				result.add(source to entity.isEnabled)
 			}
 		}
@@ -281,7 +285,7 @@ class MangaSourcesRepository @Inject constructor(
 	private suspend fun getNewSources(): MutableSet<out MangaSource> {
 		val entities = dao.findAll()
 		val result = HashSet<MangaSource>()
-		result.addAll(nyoraJsSourcesManager.getJsMangaSources())
+		result.addAll(allMangaSources)
 		for (e in entities) {
 			result.remove(e.source.toMangaSourceOrNull() ?: continue)
 		}
@@ -340,8 +344,10 @@ class MangaSourcesRepository @Inject constructor(
 	}
 
 	private fun String.toMangaSourceOrNull(): MangaSource? {
-		if (startsWith("JS_") || startsWith("data:")) {
-			return nyoraJsSourcesManager.getByName(this)
+		if (startsWith(DataDrivenMangaSource.PREFIX)) {
+			// Only a catalogue row counts as a source here: an unknown `data:` name would otherwise
+			// show up in the source list as an entry nothing can browse.
+			return catalogue.findCanonical(this)
 		}
 		if (startsWith("content:")) {
 			return com.nyora.hasan72341.core.model.MangaSource(this)

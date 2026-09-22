@@ -10,6 +10,7 @@ import android.widget.LinearLayout
 import androidx.annotation.AttrRes
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.view.WindowInsetsCompat
+import com.nyora.hasan72341.core.util.ext.contentInsetsType
 import com.nyora.hasan72341.core.util.ext.end
 import com.nyora.hasan72341.core.util.ext.start
 
@@ -24,7 +25,7 @@ class WindowInsetHolder @JvmOverloads constructor(
 
 	override fun onApplyWindowInsets(insets: WindowInsets): WindowInsets {
 		val barsInsets = WindowInsetsCompat.toWindowInsetsCompat(insets, this)
-			.getInsets(WindowInsetsCompat.Type.systemBars())
+			.getInsets(contentInsetsType)
 		val gravity = getLayoutGravity()
 		val newWidth = when (gravity and Gravity.RELATIVE_HORIZONTAL_GRAVITY_MASK) {
 			Gravity.START -> barsInsets.start(this)

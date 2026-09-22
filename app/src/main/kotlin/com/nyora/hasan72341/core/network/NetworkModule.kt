@@ -97,6 +97,10 @@ interface NetworkModule {
         ): OkHttpClient = baseClient.newBuilder().apply {
             addNetworkInterceptor(CacheLimitInterceptor())
             addInterceptor(commonHeadersInterceptor)
+            // Recovers a Madara chapter list whose admin-AJAX action answers 4xx.
+            addInterceptor(MadaraChapterFix)
+            // Undoes the per-page XOR MANGA Plus serves its images under.
+            addInterceptor(MangaPlusImageInterceptor())
         }.build()
 
         @Provides

@@ -64,7 +64,8 @@ class DetectReaderModeUseCase @Inject constructor(
 	private suspend fun guessMangaIsWebtoon(repository: MangaRepository, pages: List<MangaPage>, mangaSource: MangaSource): Boolean {
 		val pageIndex = (pages.size * 0.3).roundToInt()
 		val page = requireNotNull(pages.getOrNull(pageIndex)) { "No pages" }
-		val url = repository.getPageUrl(page)
+		val pageRequest = repository.getPageRequest(page)
+		val url = pageRequest.url
 		val uri = url.toUri()
 
 		val size = when {
@@ -84,7 +85,7 @@ class DetectReaderModeUseCase @Inject constructor(
 			}
 
 			else -> {
-				val request = PageLoader.createPageRequest(url, page.headers)
+				val request = PageLoader.createPageRequest(url, pageRequest.headers)
 				imageProxyInterceptor.interceptPageRequest(request, okHttpClient).use {
 					runInterruptible(Dispatchers.IO) {
 						getBitmapSize(it.body?.byteStream())

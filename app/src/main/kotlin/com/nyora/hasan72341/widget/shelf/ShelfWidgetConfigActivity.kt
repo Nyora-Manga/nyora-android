@@ -13,10 +13,10 @@ import com.nyora.hasan72341.core.exceptions.resolve.SnackbarErrorObserver
 import com.nyora.hasan72341.core.prefs.AppWidgetConfig
 import com.nyora.hasan72341.core.ui.BaseActivity
 import com.nyora.hasan72341.core.ui.list.OnListItemClickListener
-import com.nyora.hasan72341.core.util.ext.consumeAllSystemBarsInsets
+import com.nyora.hasan72341.core.util.ext.consumeAllContentInsets
 import com.nyora.hasan72341.core.util.ext.observe
 import com.nyora.hasan72341.core.util.ext.observeEvent
-import com.nyora.hasan72341.core.util.ext.systemBarsInsets
+import com.nyora.hasan72341.core.util.ext.contentInsets
 import com.nyora.hasan72341.databinding.ActivityAppwidgetShelfBinding
 import com.nyora.hasan72341.widget.shelf.adapter.CategorySelectAdapter
 import com.nyora.hasan72341.widget.shelf.model.CategoryItem
@@ -60,7 +60,7 @@ class ShelfWidgetConfigActivity :
 	}
 
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val barsInsets = insets.systemBarsInsets
+		val barsInsets = insets.contentInsets
 		viewBinding.recyclerView.updatePadding(
 			left = barsInsets.left,
 			right = barsInsets.right,
@@ -71,7 +71,7 @@ class ShelfWidgetConfigActivity :
 			right = barsInsets.right,
 			top = barsInsets.top,
 		)
-		return insets.consumeAllSystemBarsInsets()
+		return insets.consumeAllContentInsets()
 	}
 
 	override fun onClick(v: View) {

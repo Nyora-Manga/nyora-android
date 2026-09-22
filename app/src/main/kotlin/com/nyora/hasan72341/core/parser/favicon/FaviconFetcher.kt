@@ -22,6 +22,7 @@ import coil3.toBitmap
 import com.nyora.hasan72341.R
 import com.nyora.hasan72341.core.exceptions.CloudFlareProtectedException
 import com.nyora.hasan72341.core.model.MangaSource
+import com.nyora.hasan72341.core.parser.DomainAwareRepository
 import com.nyora.hasan72341.core.parser.EmptyMangaRepository
 import com.nyora.hasan72341.core.parser.MangaRepository
 import com.nyora.hasan72341.core.parser.ParserMangaRepository
@@ -33,7 +34,6 @@ import com.nyora.hasan72341.core.util.ext.toMimeTypeOrNull
 import com.nyora.hasan72341.local.data.FaviconCache
 import com.nyora.hasan72341.local.data.LocalMangaRepository
 import com.nyora.hasan72341.local.data.LocalStorageCache
-import com.nyora.hasan72341.js.NyoraJsMangaRepository
 import com.nyora.hasan72341.mihon.MihonMangaRepository
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -68,7 +68,7 @@ class FaviconFetcher(
 
 			is LocalMangaRepository -> imageLoader.fetch(R.drawable.ic_storage, options)
 			is MihonMangaRepository -> fetchMihonIcon(repo)
-			is NyoraJsMangaRepository -> fetchJsFavicon(repo)
+			is DomainAwareRepository -> fetchDomainFavicon(repo.domain)
 
 			else -> throw IllegalArgumentException("Unsupported repo ${repo.javaClass.simpleName}")
 		}
@@ -116,13 +116,20 @@ class FaviconFetcher(
 		throwNSEE(lastError)
 	}
 
-	private suspend fun fetchJsFavicon(repository: NyoraJsMangaRepository): FetchResult {
+	/** The icon of a source that only knows its own domain, which is every data-driven source. */
+	private suspend fun fetchDomainFavicon(sourceDomain: String): FetchResult {
 		val sizePx = maxOf(
 			options.size.width.pxOrElse { FALLBACK_SIZE },
 			options.size.height.pxOrElse { FALLBACK_SIZE },
 			256,
 		)
-		val cacheKey = options.diskCacheKey ?: "${repository.source.name}_$sizePx"
+		val domain = sourceDomain
+			.trim()
+			.removePrefix("https://")
+			.removePrefix("http://")
+			.trimEnd('/')
+		// The icon belongs to the host, so a source that moves domains picks up the new site's icon.
+		val cacheKey = options.diskCacheKey ?: "${domain}_$sizePx"
 		if (options.diskCachePolicy.readEnabled) {
 			localStorageCache[cacheKey]?.let { file ->
 				return SourceFetchResult(
@@ -132,11 +139,6 @@ class FaviconFetcher(
 				)
 			}
 		}
-		val domain = repository.source.domain
-			.trim()
-			.removePrefix("https://")
-			.removePrefix("http://")
-			.trimEnd('/')
 		val candidates = if (domain.isEmpty()) {
 			emptyList()
 		} else {

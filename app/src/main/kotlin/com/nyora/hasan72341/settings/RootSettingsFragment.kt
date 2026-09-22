@@ -11,6 +11,7 @@ import com.nyora.hasan72341.BuildConfig
 import com.nyora.hasan72341.R
 import com.nyora.hasan72341.core.prefs.AppSettings
 import com.nyora.hasan72341.core.ui.BasePreferenceFragment
+import com.nyora.hasan72341.core.ui.util.windowSizeClasses
 import com.nyora.hasan72341.core.util.ext.addMenuProvider
 import com.nyora.hasan72341.core.util.ext.getQuantityStringSafe
 import com.nyora.hasan72341.core.util.ext.observe
@@ -51,7 +52,7 @@ class RootSettingsFragment : BasePreferenceFragment(0) {
 	}
 
 	override fun setTitle(title: CharSequence?) {
-		if (!resources.getBoolean(R.bool.is_tablet)) {
+		if (!windowSizeClasses.isAtLeastMediumWidth) {
 			super.setTitle(title)
 		}
 	}

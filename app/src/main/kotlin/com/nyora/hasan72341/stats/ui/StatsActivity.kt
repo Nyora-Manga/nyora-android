@@ -28,6 +28,7 @@ import com.nyora.hasan72341.core.ui.dialog.buildAlertDialog
 import com.nyora.hasan72341.core.ui.list.OnListItemClickListener
 import com.nyora.hasan72341.core.ui.util.ReversibleActionObserver
 import com.nyora.hasan72341.core.util.NyoraColors
+import com.nyora.hasan72341.core.util.ext.contentInsetsType
 import com.nyora.hasan72341.core.util.ext.end
 import com.nyora.hasan72341.core.util.ext.observe
 import com.nyora.hasan72341.core.util.ext.observeEvent
@@ -94,7 +95,7 @@ class StatsActivity : BaseActivity<ActivityStatsBinding>(),
 		v: View,
 		insets: WindowInsetsCompat
 	): WindowInsetsCompat {
-		val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+		val bars = insets.getInsets(contentInsetsType)
 		val isTablet = viewBinding.guidelineCenter != null
 		viewBinding.appbar.updatePaddingRelative(
 			start = bars.start(v),
@@ -119,7 +120,7 @@ class StatsActivity : BaseActivity<ActivityStatsBinding>(),
 			marginEnd = if (isTablet) baseMargin else baseMargin + bars.end(v)
 		}
 		return WindowInsetsCompat.Builder(insets)
-			.setInsets(WindowInsetsCompat.Type.systemBars(), Insets.NONE)
+			.setInsets(contentInsetsType, Insets.NONE)
 			.build()
 	}
 

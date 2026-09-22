@@ -331,11 +331,10 @@
     <string name="import_completed_hint">You can delete the original file from storage to save space</string>
     <string name="import_will_start_soon">Import will start soon</string>
     <string name="discover">Discover</string>
-    <string name="parser_bundle">Parser bundle</string>
-    <string name="bundled">Bundled</string>
+    <string name="source_catalogue">Source catalogue</string>
+    <string name="source_catalogue_summary">%1$d sources, revision %2$d</string>
     <string name="checking_for_updates">Checking for updates…</string>
-    <string name="parsers_already_current">Parsers are already up to date</string>
-    <string name="parsers_updated_restart">Parsers updated. Please restart the app to apply changes</string>
+    <string name="catalogue_updated">Source catalogue updated: %1$d sources</string>
     <string name="error_checking_updates">Error checking for updates</string>
     <string name="feed">Feed</string>
     <string name="manga_error_description_pattern">Error details:&lt;br&gt;&lt;tt&gt;%1$s&lt;/tt&gt;&lt;br&gt;&lt;br&gt;1. Try to &lt;a href="%2$s"&gt;open manga in a web browser&lt;/a&gt; to ensure it is available on its source&lt;br&gt;2. Make sure you are using the &lt;a href="nyora://about"&gt;latest version of Nyora&lt;/a&gt;&lt;br&gt;3. If it is available, send an error report to the developers.</string>

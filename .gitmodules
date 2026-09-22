@@ -1,0 +1,4 @@
+[submodule "data"]
+	path = data
+	url = https://github.com/nyora-manga/nyora-data-driven.git
+	branch = android-sources-2026-09-20

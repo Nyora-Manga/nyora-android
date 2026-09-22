@@ -232,7 +232,12 @@ class TranslationOverlayView @JvmOverloads constructor(
 		return StaticLayout.Builder.obtain(text, 0, text.length, textPaint, width)
 			.setAlignment(Layout.Alignment.ALIGN_CENTER)
 			.setLineSpacing(0f, 1.25f)
-			.setBreakStrategy(Layout.BREAK_STRATEGY_SIMPLE)
+			// LineBreaker.BREAK_STRATEGY_SIMPLE is a compile-time int constant equal to the
+			// pre-API-29 Layout.BREAK_STRATEGY_SIMPLE it replaces, so it is inlined by the
+			// compiler and safe to reference unconditionally down to minSdk; StaticLayout.Builder
+			// itself has existed since API 23. Referencing Layout's own constant instead trips
+			// lint's WrongConstant check because setBreakStrategy is annotated against LineBreaker.
+			.setBreakStrategy(android.graphics.text.LineBreaker.BREAK_STRATEGY_SIMPLE)
 			.setHyphenationFrequency(Layout.HYPHENATION_FREQUENCY_NONE)
 			.build()
 	}

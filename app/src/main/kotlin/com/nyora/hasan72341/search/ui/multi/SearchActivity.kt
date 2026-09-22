@@ -20,11 +20,11 @@ import com.nyora.hasan72341.core.ui.list.ListSelectionController
 import com.nyora.hasan72341.core.ui.list.OnListItemClickListener
 import com.nyora.hasan72341.core.ui.widgets.TipView
 import com.nyora.hasan72341.core.util.ShareHelper
-import com.nyora.hasan72341.core.util.ext.consumeAllSystemBarsInsets
+import com.nyora.hasan72341.core.util.ext.consumeAllContentInsets
 import com.nyora.hasan72341.core.util.ext.invalidateNestedItemDecorations
 import com.nyora.hasan72341.core.util.ext.observe
 import com.nyora.hasan72341.core.util.ext.observeEvent
-import com.nyora.hasan72341.core.util.ext.systemBarsInsets
+import com.nyora.hasan72341.core.util.ext.contentInsets
 import com.nyora.hasan72341.databinding.ActivitySearchBinding
 import com.nyora.hasan72341.list.domain.ListFilterOption
 import com.nyora.hasan72341.list.ui.MangaSelectionDecoration
@@ -102,7 +102,7 @@ class SearchActivity :
 	}
 
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val barsInsets = insets.systemBarsInsets
+		val barsInsets = insets.contentInsets
 		viewBinding.toolbar.updatePadding(
 			top = barsInsets.top,
 			left = barsInsets.left,
@@ -114,7 +114,7 @@ class SearchActivity :
 			right = barsInsets.right,
 			bottom = barsInsets.bottom,
 		)
-		return insets.consumeAllSystemBarsInsets()
+		return insets.consumeAllContentInsets()
 	}
 
 	override fun onItemClick(item: MangaListModel, view: View) {

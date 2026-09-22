@@ -10,7 +10,8 @@ import androidx.fragment.app.commit
 import com.google.android.material.appbar.AppBarLayout
 import dagger.hilt.android.AndroidEntryPoint
 import com.nyora.hasan72341.R
-import com.nyora.hasan72341.core.util.ext.consumeSystemBarsInsets
+import com.nyora.hasan72341.core.util.ext.consumeContentInsets
+import com.nyora.hasan72341.core.util.ext.contentInsetsType
 import com.nyora.hasan72341.databinding.ActivityContainerBinding
 import com.nyora.hasan72341.main.ui.owners.AppBarOwner
 import com.nyora.hasan72341.main.ui.owners.SnackbarOwner
@@ -41,13 +42,13 @@ abstract class FragmentContainerActivity(private val fragmentClass: Class<out Fr
 	}
 
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+		val bars = insets.getInsets(contentInsetsType)
 		viewBinding.appbar.updatePadding(
 			left = bars.left,
 			right = bars.right,
 			top = bars.top,
 		)
-		return insets.consumeSystemBarsInsets(top = true)
+		return insets.consumeContentInsets(top = true)
 	}
 
 	protected open fun getFragmentExtras(): Bundle? = intent.extras

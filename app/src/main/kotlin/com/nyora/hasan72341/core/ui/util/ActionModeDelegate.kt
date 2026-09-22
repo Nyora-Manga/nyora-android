@@ -9,12 +9,12 @@ import androidx.appcompat.widget.ActionBarContextView
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.ColorUtils
 import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updateLayoutParams
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import com.nyora.hasan72341.core.util.ext.getThemeColor
 import com.google.android.material.R as materialR
+import com.nyora.hasan72341.core.util.ext.contentInsetsType
 
 class ActionModeDelegate : OnBackPressedCallback(false) {
 
@@ -42,7 +42,7 @@ class ActionModeDelegate : OnBackPressedCallback(false) {
 			defaultStatusBarColor = window.statusBarColor
 			window.statusBarColor = actionModeColor
 			val insets = ViewCompat.getRootWindowInsets(window.decorView)
-				?.getInsets(WindowInsetsCompat.Type.systemBars()) ?: return
+				?.getInsets(contentInsetsType) ?: return
 			window.decorView.findViewById<ActionBarContextView?>(androidx.appcompat.R.id.action_mode_bar)?.apply {
 				setBackgroundColor(actionModeColor)
 				updateLayoutParams<ViewGroup.MarginLayoutParams> {

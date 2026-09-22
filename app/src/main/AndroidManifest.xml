@@ -52,6 +52,7 @@
 		android:localeConfig="@xml/locales_config"
 		android:networkSecurityConfig="@xml/network_security_config"
 		android:requestLegacyExternalStorage="true"
+		android:resizeableActivity="true"
 		android:roundIcon="@mipmap/ic_launcher_round"
 		android:supportsRtl="true"
 		android:theme="@style/Theme.Nyora"
@@ -226,10 +227,6 @@
 		<activity
 			android:name="com.nyora.hasan72341.settings.protect.ProtectSetupActivity"
 			android:windowSoftInputMode="adjustResize" />
-		<activity
-			android:name="com.nyora.hasan72341.download.ui.list.DownloadsActivity"
-			android:label="@string/downloads"
-			android:launchMode="singleTop" />
 		<activity android:name="com.nyora.hasan72341.image.ui.ImageActivity" />
 		<activity android:name="com.nyora.hasan72341.favourites.ui.categories.edit.FavouritesCategoryEditActivity" />
 		<activity

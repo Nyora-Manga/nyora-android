@@ -24,6 +24,7 @@ import com.nyora.hasan72341.core.ui.util.ReversibleActionObserver
 import com.nyora.hasan72341.core.ui.widgets.ChipsView
 import com.nyora.hasan72341.core.ui.widgets.ChipsView.ChipModel
 import com.nyora.hasan72341.core.util.LocaleComparator
+import com.nyora.hasan72341.core.util.ext.contentInsetsType
 import com.nyora.hasan72341.core.util.ext.getDisplayName
 import com.nyora.hasan72341.core.util.ext.observe
 import com.nyora.hasan72341.core.util.ext.observeEvent
@@ -69,7 +70,7 @@ class SourcesCatalogActivity : BaseActivity<ActivitySourcesCatalogBinding>(),
 	}
 
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+		val bars = insets.getInsets(contentInsetsType)
 		viewBinding.recyclerView.updatePadding(
 			left = bars.left,
 			right = bars.right,
@@ -81,7 +82,7 @@ class SourcesCatalogActivity : BaseActivity<ActivitySourcesCatalogBinding>(),
 			top = bars.top,
 		)
 		return WindowInsetsCompat.Builder(insets)
-			.setInsets(WindowInsetsCompat.Type.systemBars(), Insets.NONE)
+			.setInsets(contentInsetsType, Insets.NONE)
 			.build()
 	}
 

@@ -8,20 +8,14 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.room.InvalidationTracker
 import androidx.work.Configuration
-import androidx.work.Constraints
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.ExistingWorkPolicy
-import androidx.work.NetworkType
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
-import com.nyora.hasan72341.js.ParserOtaWorker
 import dagger.hilt.android.HiltAndroidApp
-import java.util.concurrent.TimeUnit
 import com.nyora.hasan72341.BuildConfig
 import com.nyora.hasan72341.core.db.MangaDatabase
 import com.nyora.hasan72341.core.os.AppValidator
+import com.nyora.hasan72341.core.parser.datadriven.CatalogueRefreshWorker
+import com.nyora.hasan72341.core.parser.datadriven.DataDrivenCatalogue
 import com.nyora.hasan72341.core.prefs.AppSettings
+import com.nyora.hasan72341.core.prefs.SourceSettings
 import com.nyora.hasan72341.core.util.ext.processLifecycleScope
 import com.nyora.hasan72341.local.data.LocalStorageChanges
 import com.nyora.hasan72341.local.data.index.LocalMangaIndex
@@ -71,6 +65,9 @@ open class BaseApp : Application(), Configuration.Provider {
 	@Inject
 	lateinit var supabaseConfig: SupabaseConfig
 
+	@Inject
+	lateinit var dataDrivenCatalogue: DataDrivenCatalogue
+
 	override val workManagerConfiguration: Configuration
 		get() = Configuration.Builder()
 			.setWorkerFactory(workerFactory)
@@ -85,39 +82,26 @@ open class BaseApp : Application(), Configuration.Provider {
 		if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
 			Security.insertProviderAt(Conscrypt.newProvider(), 1)
 		}
+		if (!settings.isRenamedSourcePreferencesMigrated) {
+			// Sources renamed by database schema 34, and the DD_/JS_ spellings a shipped install
+			// still holds, keep their settings: the files move with them, once.
+			SourceSettings.migrateRenamedPreferenceFiles(this)
+			settings.isRenamedSourcePreferencesMigrated = true
+		}
 		setupActivityLifecycleCallbacks()
 		processLifecycleScope.launch(Dispatchers.IO) {
 			setupDatabaseObservers()
 			localStorageChanges.collect(localMangaIndexProvider.get())
 		}
+		processLifecycleScope.launch(Dispatchers.IO) {
+			// Parse the bundled catalogue before the first screen asks it for a source.
+			dataDrivenCatalogue.warmUp()
+		}
 		workScheduleManager.init()
-		setupParserOtaUpdate()
+		CatalogueRefreshWorker.schedule(this)
 		supabaseConfig.configure(
 			url = BuildConfig.SUPABASE_URL.ifBlank { "https://fqguzcoytnbnjwaddakn.supabase.co" },
 			anonKey = BuildConfig.SUPABASE_ANON_KEY.ifBlank { "sb_publishable_RZTcdZZlzb_UhYAxtB09AQ_URTEftE4" }
-		)
-	}
-
-	private fun setupParserOtaUpdate() {
-		val constraints = Constraints.Builder()
-			.setRequiredNetworkType(NetworkType.CONNECTED)
-			.build()
-		val oneTimeRequest = OneTimeWorkRequestBuilder<ParserOtaWorker>()
-			.setConstraints(constraints)
-			.build()
-		val periodicRequest = PeriodicWorkRequestBuilder<ParserOtaWorker>(12, TimeUnit.HOURS)
-			.setConstraints(constraints)
-			.build()
-		val workManager = WorkManager.getInstance(this)
-		workManager.enqueueUniqueWork(
-			"ParserOtaUpdateNow",
-			ExistingWorkPolicy.REPLACE,
-			oneTimeRequest
-		)
-		workManager.enqueueUniquePeriodicWork(
-			"ParserOtaUpdate",
-			ExistingPeriodicWorkPolicy.KEEP,
-			periodicRequest
 		)
 	}
 

@@ -23,6 +23,7 @@ import com.nyora.hasan72341.core.model.MangaSource
 import com.nyora.hasan72341.core.nav.AppRouter
 import com.nyora.hasan72341.core.ui.BaseActivity
 import com.nyora.hasan72341.core.util.ext.buildBundle
+import com.nyora.hasan72341.core.util.ext.contentInsetsType
 import com.nyora.hasan72341.core.util.ext.end
 import com.nyora.hasan72341.core.util.ext.observe
 import com.nyora.hasan72341.core.util.ext.observeEvent
@@ -75,7 +76,7 @@ class SettingsActivity :
 	}
 
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+		val bars = insets.getInsets(contentInsetsType)
 		val isTablet = viewBinding.containerMaster != null
 		viewBinding.appbar.updatePaddingRelative(
 			start = bars.start(v),

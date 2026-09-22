@@ -29,5 +29,6 @@ dependencyResolutionManagement {
 }
 
 include ':app'
+include ':engine'
 include ':translator'
 rootProject.name = "Nyora"

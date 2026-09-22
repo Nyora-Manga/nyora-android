@@ -27,6 +27,7 @@ import com.nyora.hasan72341.core.ui.util.PagerNestedScrollHelper
 import com.nyora.hasan72341.core.ui.util.RecyclerViewOwner
 import com.nyora.hasan72341.core.ui.widgets.ChipsView
 import com.nyora.hasan72341.core.util.RecyclerViewScrollCallback
+import com.nyora.hasan72341.core.util.ext.contentInsetsType
 import com.nyora.hasan72341.core.util.ext.findAppCompatDelegate
 import com.nyora.hasan72341.core.util.ext.findParentCallback
 import com.nyora.hasan72341.core.util.ext.observe
@@ -143,7 +144,7 @@ class ChaptersFragment :
 		insets: WindowInsetsCompat
 	): WindowInsetsCompat {
 		viewBinding?.run {
-			val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+			val bars = insets.getInsets(contentInsetsType)
 			recyclerViewChapters.updatePadding(
 				left = bars.left,
 				right = bars.right,
