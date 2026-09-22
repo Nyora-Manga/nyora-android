@@ -10,6 +10,7 @@ import com.nyora.hasan72341.core.parser.datadriven.stableMangaId
 import com.nyora.hasan72341.core.parser.datadriven.toSourceDef
 import com.nyora.hasan72341.mihon.parsers.model.ContentType
 import com.nyora.hasan72341.mihon.parsers.model.Manga
+import com.nyora.hasan72341.mihon.parsers.model.MangaChapter
 import com.nyora.hasan72341.mihon.parsers.model.MangaListFilter
 import com.nyora.hasan72341.mihon.parsers.model.MangaPage
 import com.nyora.hasan72341.mihon.parsers.model.MangaSourceRef
@@ -17,6 +18,7 @@ import com.nyora.hasan72341.mihon.parsers.model.SortOrder
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import app.nyora.core.model.Manga as EngineManga
@@ -105,6 +107,80 @@ class DataDrivenMangaRepositoryTest {
 	}
 
 	@Test
+	fun pagesCarryTheEngineChapterIdRecordedWhenTheChaptersWereMapped() = runBlocking {
+		// MangAdventure and the Iken API key their page request on a numeric id, not the url.
+		val chapter = EngineChapter(id = "42", url = "/reader/x/1/1/", number = 1f)
+		val engine = FakeEngine(
+			details = EngineManga(id = "/reader/x/", title = "X", url = "/reader/x/", chapters = listOf(chapter)),
+		)
+		val repo = repository(engine)
+		val manga = repo.getDetails(
+			Manga(id = "keep", title = "X", url = "/reader/x/", source = MangaSourceRef.Data("data:hiperdex")),
+		)
+		val appChapter = manga.chapters.single()
+		assertEquals(stableChapterId("HIPERDEX", "/reader/x/1/1/"), appChapter.id)
+
+		repo.getPages(appChapter)
+
+		assertEquals("42", engine.lastPageListChapter?.id)
+		assertEquals("/reader/x/1/1/", engine.lastPageListChapter?.url)
+	}
+
+	@Test
+	fun aColdMapHandsTheEngineTheChapterUrlNeverTheHash() = runBlocking {
+		val engine = FakeEngine()
+		val repo = repository(engine)
+		val hash = stableChapterId("HIPERDEX", "/manga/x/c1")
+
+		repo.getPages(MangaChapter(id = hash, title = "", url = "/manga/x/c1"))
+
+		assertEquals("/manga/x/c1", engine.lastPageListChapter?.id)
+		// A url-keyed engine must not pay for a series lookup on every cold page request.
+		assertNull(engine.lastDetailsManga)
+	}
+
+	@Test
+	fun aColdMapReadsTheMangadventureSeriesListToRecoverTheNumericId() = runBlocking {
+		val mangadventure = source.copy(catalogueId = "ARCRELIGHT", engineKey = "mangadventure", domain = "arc-relight.com")
+		val chapter = EngineChapter(id = "42", url = "/reader/x/1/5/", number = 5f)
+		val engine = FakeEngine(
+			details = EngineManga(id = "/reader/x/", title = "X", url = "/reader/x/", chapters = listOf(chapter)),
+		)
+		val repo = repository(engine, source = mangadventure)
+
+		repo.getPages(MangaChapter(id = stableChapterId("ARCRELIGHT", "/reader/x/1/5/"), title = "", url = "/reader/x/1/5/"))
+
+		assertEquals("/reader/x/", engine.lastDetailsManga?.url)
+		assertEquals("42", engine.lastPageListChapter?.id)
+		// Recovered ids are kept: the next chapter of the same series costs no second lookup.
+		repo.getPages(MangaChapter(id = stableChapterId("ARCRELIGHT", "/reader/x/1/5/"), title = "", url = "/reader/x/1/5/"))
+		assertEquals(1, engine.detailsCalls)
+	}
+
+	@Test
+	fun aMangadventureSeriesThatCannotBeReadStillFallsBackToTheUrl() = runBlocking {
+		val mangadventure = source.copy(catalogueId = "ARCRELIGHT", engineKey = "mangadventure", domain = "arc-relight.com")
+		val engine = FakeEngine(details = null)
+		val repo = repository(engine, source = mangadventure)
+
+		repo.getPages(MangaChapter(id = stableChapterId("ARCRELIGHT", "/reader/x/1/5/"), title = "", url = "/reader/x/1/5/"))
+
+		assertEquals(1, engine.detailsCalls)
+		assertEquals("/reader/x/1/5/", engine.lastPageListChapter?.id)
+	}
+
+	@Test
+	fun theMangadventureSeriesUrlIsDerivedFromTheChapterUrl() {
+		assertEquals("/reader/solo/", mangadventureSeriesUrl("/reader/solo/1/5/"))
+		assertEquals("/reader/solo/", mangadventureSeriesUrl("reader/solo/0/12.5/"))
+		assertEquals("/reader/solo/", mangadventureSeriesUrl("https://arc-relight.com/reader/solo/1/5/"))
+		// The series url itself, and urls of another shape, name no chapter.
+		assertNull(mangadventureSeriesUrl("/reader/solo/"))
+		assertNull(mangadventureSeriesUrl("/manga/solo/chapter-1"))
+		assertNull(mangadventureSeriesUrl(""))
+	}
+
+	@Test
 	fun pageRequestMergesRefererPageAndResolvedHeaders() = runBlocking {
 		val engine = FakeEngine(resolved = ImageRequest("https://cdn/x.jpg", mapOf("X-Nyora-Mangaplus-Key" to "ab")))
 		val request = repository(engine).getPageRequest(
@@ -129,6 +205,7 @@ class DataDrivenMangaRepositoryTest {
 	private fun repository(
 		engine: SourceEngine,
 		domainOverride: () -> String? = { null },
+		source: DataDrivenMangaSource = this.source,
 	) = DataDrivenMangaRepository(
 		source = source,
 		okHttpClient = OkHttpClient(),
@@ -155,6 +232,15 @@ class DataDrivenMangaRepositoryTest {
 			private set
 
 		var lastFilter: EngineFilter? = null
+			private set
+
+		var lastDetailsManga: EngineManga? = null
+			private set
+
+		var detailsCalls: Int = 0
+			private set
+
+		var lastPageListChapter: EngineChapter? = null
 			private set
 
 		override val source: SourceDef = this@DataDrivenMangaRepositoryTest.source.toSourceDef()
@@ -184,9 +270,16 @@ class DataDrivenMangaRepositoryTest {
 
 		override suspend fun getAvailableTags(): Set<EngineTag> = emptySet()
 
-		override suspend fun getDetails(manga: EngineManga): EngineManga = checkNotNull(details)
+		override suspend fun getDetails(manga: EngineManga): EngineManga {
+			lastDetailsManga = manga
+			detailsCalls++
+			return checkNotNull(details)
+		}
 
-		override suspend fun getPageList(chapter: EngineChapter): List<EnginePage> = emptyList()
+		override suspend fun getPageList(chapter: EngineChapter): List<EnginePage> {
+			lastPageListChapter = chapter
+			return emptyList()
+		}
 
 		override suspend fun getPageImageUrl(page: EnginePage): String = page.url
 

@@ -23,9 +23,11 @@ import com.nyora.hasan72341.mihon.parsers.model.MangaSourceRef
 import com.nyora.hasan72341.mihon.parsers.model.MangaState
 import com.nyora.hasan72341.mihon.parsers.model.MangaTag
 import com.nyora.hasan72341.mihon.parsers.model.SortOrder
+import com.nyora.hasan72341.mihon.parsers.util.runCatchingCancellable
 import okhttp3.OkHttpClient
 import org.koitharu.kotatsu.parsers.InternalParsersApi
 import java.util.EnumSet
+import java.util.concurrent.ConcurrentHashMap
 import app.nyora.core.model.ContentRating as EngineContentRating
 import app.nyora.core.model.Manga as EngineManga
 import app.nyora.core.model.MangaChapter as EngineChapter
@@ -90,6 +92,16 @@ class DataDrivenMangaRepository(
 
 	private val engine: SourceEngine by lazy { engineFactory(source.toSourceDef(), engineContext) }
 
+	/**
+	 * The engine's own chapter id by the app chapter id, for the chapters this repository mapped.
+	 *
+	 * The app id is the legacy hash every client shares, which is not what the engines key a page
+	 * request on: most set their id to the chapter url, but MangAdventure and the Iken API need the
+	 * numeric id their series listing returns. The id is recorded here when a chapter is mapped and
+	 * handed back with the page request; only ids that differ from the url are worth keeping.
+	 */
+	private val engineChapterIds = ConcurrentHashMap<String, String>()
+
 	// Read while rendering the source list, so it must never throw on a bad-config engine.
 	override val sortOrders: Set<SortOrder>
 		get() = runCatching {
@@ -136,7 +148,7 @@ class DataDrivenMangaRepository(
 
 	override suspend fun getPagesImpl(chapter: MangaChapter): List<MangaPage> {
 		val engineChapter = EngineChapter(
-			id = chapter.id,
+			id = engineChapterId(chapter),
 			title = chapter.title.ifBlank { null },
 			number = chapter.number,
 			volume = chapter.volume,
@@ -155,6 +167,31 @@ class DataDrivenMangaRepository(
 				source = source,
 			)
 		}
+	}
+
+	/**
+	 * The id the engine gave [chapter], or the chapter url when the map is cold: a fresh process, or
+	 * a repository created after the details were served from the content cache. The url is the id
+	 * for every engine except the ones keyed by a numeric id, and those publish the id only in the
+	 * series chapter list, so when the url names the series that list is read again to recover it.
+	 */
+	private suspend fun engineChapterId(chapter: MangaChapter): String {
+		engineChapterIds[chapter.id]?.let { return it }
+		val seriesUrl = SERIES_URL_OF_CHAPTER[source.engineKey]?.invoke(chapter.url) ?: return chapter.url
+		runCatchingCancellable {
+			val series = EngineManga(id = seriesUrl, title = "", url = seriesUrl)
+			engine.getDetails(series).chapters.orEmpty().forEach { rememberEngineChapterId(it) }
+		}
+		return engineChapterIds[chapter.id] ?: chapter.url
+	}
+
+	/** Record the engine id of [chapter] under its app id and return that app id. */
+	private fun rememberEngineChapterId(chapter: EngineChapter): String {
+		val appId = stableChapterId(catalogueId, chapter.url)
+		if (chapter.id != chapter.url && chapter.id.isNotEmpty()) {
+			engineChapterIds[appId] = chapter.id
+		}
+		return appId
 	}
 
 	override suspend fun getPageUrl(page: MangaPage): String = getPageRequest(page).url
@@ -267,7 +304,7 @@ class DataDrivenMangaRepository(
 	)
 
 	private fun EngineChapter.toApp(index: Int): MangaChapter = MangaChapter(
-		id = stableChapterId(catalogueId, url),
+		id = rememberEngineChapterId(this),
 		// Drop a title that is just the chapter number — the UI formats "Chapter {number}" and would
 		// otherwise render the redundant "Chapter 1 - 1".
 		title = title?.trim().orEmpty().let { if (it == numberDisplay(number)) "" else it },
@@ -301,5 +338,25 @@ class DataDrivenMangaRepository(
 		private const val DEFAULT_PAGE_SIZE = 20
 
 		private const val KEY_AVAILABLE_CONTENT_TYPES = "availableContentTypes"
+
+		/**
+		 * For the engines whose page request needs an id the chapter url does not carry: the series
+		 * url the chapter url names, so the series chapter list (and its ids) can be read again.
+		 * MangAdventure lists chapters at `/reader/{slug}/{volume}/{number}/`, the series at
+		 * `/reader/{slug}/`. The Iken API wants its numeric id too, but its engine falls back to the
+		 * reader HTML at the chapter url when the id is not numeric, so the url alone serves there.
+		 */
+		private val SERIES_URL_OF_CHAPTER: Map<String, (String) -> String?> = mapOf(
+			"mangadventure" to ::mangadventureSeriesUrl,
+		)
 	}
+}
+
+/** The MangAdventure series url (`/reader/{slug}/`) a chapter url (`/reader/{slug}/{volume}/{number}/`) names, or null. */
+internal fun mangadventureSeriesUrl(chapterUrl: String): String? {
+	val path = if ("://" in chapterUrl) chapterUrl.substringAfter("://").substringAfter('/', "") else chapterUrl
+	val segments = path.split('/').filter { it.isNotEmpty() }
+	val reader = segments.indexOf("reader")
+	if (reader < 0 || reader + 2 >= segments.size) return null
+	return "/reader/${segments[reader + 1]}/"
 }
