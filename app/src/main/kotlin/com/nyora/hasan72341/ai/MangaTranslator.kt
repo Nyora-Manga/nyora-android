@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Rect
 import android.net.Uri
+import android.os.Build
 import com.google.mlkit.nl.translate.TranslateLanguage
 import com.google.mlkit.nl.translate.Translation
 import com.google.mlkit.nl.translate.TranslatorOptions
@@ -599,7 +600,8 @@ class MangaTranslator @Inject constructor(
 
 	private fun preprocessBitmapForOcr(original: Bitmap, scaleFactor: Float): Bitmap {
 		// Hardware bitmaps cannot be drawn on a software canvas. We must copy it to a software bitmap first.
-		val softwareBitmap = if (original.config == Bitmap.Config.HARDWARE) {
+		// Bitmap.Config.HARDWARE only exists from API 26; older devices never produce hardware bitmaps.
+		val softwareBitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && original.config == Bitmap.Config.HARDWARE) {
 			original.copy(Bitmap.Config.ARGB_8888, false) ?: original
 		} else {
 			original
