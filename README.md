@@ -211,16 +211,15 @@ cd nyora-android
 ./gradlew assembleRelease   # or open in Android Studio and Run ▸ app
 ```
 
-`data` is a submodule: it tracks branch `android-sources-2026-09-20` of
+`data` is a submodule: it tracks branch `main` of
 [nyora-data-driven](https://github.com/nyora-manga/nyora-data-driven), pinned to the commit this
 revision was built against, and carries the source catalogue and engines the `:engine` module
 compiles. If you already keep a checkout of it elsewhere, build against that instead of the
 submodule with `./gradlew -Pnyora.dataDrivenDir=/path/to/nyora-data-driven/data`.
 
-`init-data-submodule.sh` runs `git submodule update --init --recursive` and, if the pinned commit is
-not on the remote yet, reads it out of the bundle in `.github/data-bootstrap/` so the clone still
-builds; CI uses the same script. Once the branch is published the bundle stops being read and can be
-deleted — the script prints the two commands for that when it falls back to it.
+`init-data-submodule.sh` runs `git submodule update --init --recursive` and, when a shallow or
+refspec-limited clone cannot resolve the pinned commit, fetches the tracked branch explicitly; CI
+uses the same script.
 
 The release APK is produced under the app module's build outputs. You can also open the project in Android Studio and use **Run ▸ app** to build and deploy a debug build to a connected device or emulator.
 
