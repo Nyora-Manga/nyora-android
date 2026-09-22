@@ -41,6 +41,10 @@ private val CHAPTER_ID_COLUMNS = listOf(
  * A hash collision must never merge unrelated manga, so an existing canonical row is an alias of
  * this one only when its stored source and url resolve to the same identity. When they do not the
  * row keeps the id it has, which leaves it unresolvable but intact.
+ *
+ * The `chapters` blob of an already-existing canonical row wins, so the caller settles [oldId]'s
+ * chapter ids with [rekeyChapterIds] first: afterwards the urls this row's history and bookmarks
+ * were keyed by are gone with its blob.
  */
 internal fun mergeLegacyMangaAlias(
 	db: SupportSQLiteDatabase,
@@ -77,10 +81,10 @@ internal fun mergeLegacyMangaAlias(
 }
 
 /**
- * Re-hashes the chapter ids of one settled manga row.
+ * Re-hashes the chapter ids of one manga row and of everything pointing at its chapters.
  *
- * A chapter id embeds the source token exactly like a manga id does, so a row that moved to another
- * identity carries a `chapters` blob, `history.chapter_id`, `bookmarks.chapter_id` and
+ * A chapter id embeds the source token exactly like a manga id does, so a row whose identity moves
+ * carries a `chapters` blob, `history.chapter_id`, `bookmarks.chapter_id` and
  * `tracks.last_chapter_id` the runtime can no longer produce: the next details refresh rewrites the
  * blob from the new token and the stale ids stop resolving. The chapter urls are in the blob
  * already, so the new ids are recomputed from there and replayed over the tables that reference

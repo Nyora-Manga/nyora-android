@@ -240,6 +240,67 @@ class MangaDatabaseTest {
 		migrated.close()
 	}
 
+	/**
+	 * The two ways a shipped row meets a row that already holds the canonical id: a v2.1.6 install
+	 * upgraded to v2.6, which left a hashed row and an engine-href row for the same manga, and one
+	 * v2.6 install that used both the native and the data-driven route for the same site. The
+	 * canonical row keeps its own `chapters` blob, so the alias has to carry its history and
+	 * bookmarks over as hashed chapter ids or the resume position stops resolving.
+	 */
+	@Test
+	fun migration33MergesShippedAliasesOntoAnExistingCanonicalRow() {
+		val db = helper.createDatabase(TEST_DB, 32)
+		db.execSQL("INSERT INTO sources VALUES ('JS_HIPERDEX', 1, 0, 0, 0, 0, 0)")
+		db.execSQL("INSERT INTO sources VALUES ('DD_HIPERDEX', 1, 1, 0, 0, 0, 0)")
+		db.execSQL("INSERT INTO sources VALUES ('DD_MANGAFIRE_EN', 1, 2, 0, 0, 0, 0)")
+		db.execSQL("INSERT INTO manga VALUES ('$HIPERDEX_ID', 'Hiperdex', NULL, '/manga/x', '/manga/x', 0, 0, NULL, '', NULL, NULL, NULL, '{\"name\":\"JS_HIPERDEX\"}', '', '[]', '${chaptersBlob(HIPERDEX_CHAPTER_ID, "/manga/x/chapter-1")}', 0, 0)")
+		db.execSQL("INSERT INTO manga VALUES ('/manga/x', 'Hiperdex alias', NULL, '/manga/x', '/manga/x', 0, 0, NULL, '', NULL, NULL, NULL, '{\"name\":\"DD_HIPERDEX\"}', '', '[]', '${chaptersBlob("/manga/x/chapter-1", "/manga/x/chapter-1")}', 0, 0)")
+		db.execSQL("INSERT INTO manga VALUES ('DD_MANGAFIRE_EN|/manga/y', 'MangaFire', NULL, '/manga/y', '/manga/y', 0, 0, NULL, '', NULL, NULL, NULL, '{\"name\":\"DD_MANGAFIRE_EN\"}', '', '[]', '${chaptersBlob("DD_MANGAFIRE_EN|chapter|/manga/y/en/chapter-1", "/manga/y/en/chapter-1")}', 0, 0)")
+		db.execSQL("INSERT INTO manga VALUES ('/manga/y', 'MangaFire', NULL, '/manga/y', '/manga/y', 0, 0, NULL, '', NULL, NULL, NULL, '{\"name\":\"DD_MANGAFIRE_EN\"}', '', '[]', '${chaptersBlob("/manga/y/en/chapter-1", "/manga/y/en/chapter-1")}', 0, 0)")
+		db.execSQL("INSERT INTO history VALUES ('/manga/x', 7, 8, '/manga/x/chapter-1', 3, 0, 0, 0, 0)")
+		db.execSQL("INSERT INTO bookmarks VALUES ('/manga/x', 'page-1', '/manga/x/chapter-1', 3, 0, '', 0, 0, 0)")
+		db.execSQL("INSERT INTO history VALUES ('/manga/y', 9, 10, '/manga/y/en/chapter-1', 4, 0, 0, 0, 0)")
+		db.execSQL("INSERT INTO tracks VALUES ('/manga/y', '/manga/y/en/chapter-1', 2, 0, 0, 0, NULL)")
+		db.close()
+
+		val migrated = helper.runMigrationsAndValidate(TEST_DB, 34, true, Migration32To33(), Migration33To34())
+		migrated.query("SELECT manga_id, source, chapters FROM manga ORDER BY title").use { cursor ->
+			assertEquals(true, cursor.moveToFirst())
+			assertEquals(HIPERDEX_ID, cursor.getString(0))
+			assertEquals("{\"name\":\"data:hiperdex\"}", cursor.getString(1))
+			assertEquals(HIPERDEX_CHAPTER_ID, chapterIdOf(cursor.getString(2)))
+			assertEquals(true, cursor.moveToNext())
+			assertEquals(MANGAFIRE_ID, cursor.getString(0))
+			assertEquals("{\"name\":\"data:mangafire_en\"}", cursor.getString(1))
+			assertEquals(MANGAFIRE_CHAPTER_ID, chapterIdOf(cursor.getString(2)))
+			assertEquals(false, cursor.moveToNext())
+		}
+		migrated.query("SELECT manga_id, created_at, chapter_id FROM history ORDER BY created_at").use { cursor ->
+			assertEquals(true, cursor.moveToFirst())
+			assertEquals(HIPERDEX_ID, cursor.getString(0))
+			assertEquals(7L, cursor.getLong(1))
+			assertEquals(HIPERDEX_CHAPTER_ID, cursor.getString(2))
+			assertEquals(true, cursor.moveToNext())
+			assertEquals(MANGAFIRE_ID, cursor.getString(0))
+			assertEquals(9L, cursor.getLong(1))
+			assertEquals(MANGAFIRE_CHAPTER_ID, cursor.getString(2))
+			assertEquals(false, cursor.moveToNext())
+		}
+		migrated.query("SELECT manga_id, chapter_id FROM bookmarks").use { cursor ->
+			assertEquals(true, cursor.moveToFirst())
+			assertEquals(HIPERDEX_ID, cursor.getString(0))
+			assertEquals(HIPERDEX_CHAPTER_ID, cursor.getString(1))
+			assertEquals(false, cursor.moveToNext())
+		}
+		migrated.query("SELECT manga_id, last_chapter_id FROM tracks").use { cursor ->
+			assertEquals(true, cursor.moveToFirst())
+			assertEquals(MANGAFIRE_ID, cursor.getString(0))
+			assertEquals(MANGAFIRE_CHAPTER_ID, cursor.getString(1))
+			assertEquals(false, cursor.moveToNext())
+		}
+		migrated.close()
+	}
+
 	private fun chapterIdOf(chapters: String): String = JSONArray(chapters).getJSONObject(0).getString("id")
 
 	private companion object {

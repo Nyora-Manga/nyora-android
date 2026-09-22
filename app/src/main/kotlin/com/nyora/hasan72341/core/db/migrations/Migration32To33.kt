@@ -77,6 +77,16 @@ class Migration32To33 : Migration(32, 33) {
 			val sourceName = upgradedStoredSourceName(storedSource) ?: return@forEach
 			val canonicalId = upgradedMangaId(sourceName, url)
 			val moved = canonicalId != mangaId
+			// Re-key before the merge, while this row still owns the `chapters` blob: the blob is the
+			// only place a chapter url is stored, and merging onto a canonical row that already exists
+			// keeps that row's blob and drops this one, which would strand the history and bookmark
+			// rows travelling with it on chapter ids the runtime can never produce again. A row whose
+			// id is already the one every client stamps hashes its chapter ids from the same token, so
+			// it cannot be carrying stale ones and its blob - the largest column in the database -
+			// needs no reading; a canonical row a merge lands on is such a row by definition.
+			if (moved) {
+				rekeyChapterIds(db, mangaId, sourceName)
+			}
 			val settledId = if (moved && mergeLegacyMangaAlias(db, mangaId, canonicalId, sourceName, url)) {
 				canonicalId
 			} else {
@@ -85,12 +95,6 @@ class Migration32To33 : Migration(32, 33) {
 			val upgradedStored = storedSourceName(storedSource, sourceName)
 			if (upgradedStored != storedSource) {
 				db.execSQL("UPDATE manga SET source = ? WHERE manga_id = ?", arrayOf(upgradedStored, settledId))
-			}
-			// A chapter id hashes from the same token as the manga id, so a row whose id is already
-			// the one every client stamps cannot be carrying chapter ids the runtime cannot produce,
-			// and its `chapters` blob - the largest column in the database - needs no reading.
-			if (moved) {
-				rekeyChapterIds(db, settledId, sourceName)
 			}
 		}
 	}
