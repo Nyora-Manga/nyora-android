@@ -24,6 +24,7 @@ import com.nyora.hasan72341.core.ui.sheet.BaseAdaptiveSheet
 import com.nyora.hasan72341.core.ui.util.CollapseActionViewCallback
 import com.nyora.hasan72341.core.util.RecyclerViewScrollCallback
 import com.nyora.hasan72341.core.util.ext.consume
+import com.nyora.hasan72341.core.util.ext.contentInsetsType
 import com.nyora.hasan72341.core.util.ext.firstVisibleItemPosition
 import com.nyora.hasan72341.core.util.ext.getDisplayMessage
 import com.nyora.hasan72341.core.util.ext.observe
@@ -113,7 +114,7 @@ class ScrobblingSelectorSheet :
 	}
 
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val typeMask = WindowInsetsCompat.Type.systemBars()
+		val typeMask = contentInsetsType
 		val basePadding = v.resources.getDimensionPixelOffset(R.dimen.list_spacing_normal)
 		viewBinding?.recyclerView?.updatePadding(
 			bottom = basePadding + insets.getInsets(typeMask).bottom,

@@ -20,14 +20,14 @@ import com.nyora.hasan72341.R
 import com.nyora.hasan72341.core.exceptions.resolve.ExceptionResolver
 import com.nyora.hasan72341.core.prefs.AppSettings
 import com.nyora.hasan72341.core.ui.util.RecyclerViewOwner
-import com.nyora.hasan72341.core.util.ext.consumeAllSystemBarsInsets
+import com.nyora.hasan72341.core.util.ext.consumeAllContentInsets
 import com.nyora.hasan72341.core.util.ext.container
 import com.nyora.hasan72341.core.util.ext.end
 import com.nyora.hasan72341.core.util.ext.getThemeColor
 import com.nyora.hasan72341.core.util.ext.getThemeDrawable
 import com.nyora.hasan72341.core.util.ext.parentView
 import com.nyora.hasan72341.core.util.ext.start
-import com.nyora.hasan72341.core.util.ext.systemBarsInsets
+import com.nyora.hasan72341.core.util.ext.contentInsets
 import com.nyora.hasan72341.settings.SettingsActivity
 import javax.inject.Inject
 import com.google.android.material.R as materialR
@@ -61,9 +61,9 @@ abstract class BasePreferenceFragment(@StringRes private val titleId: Int) :
 	}
 
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val barsInsets = insets.systemBarsInsets
+		val barsInsets = insets.contentInsets
 		listView.setPaddingRelative(0, 0, 0, barsInsets.bottom)
-		return insets.consumeAllSystemBarsInsets()
+		return insets.consumeAllContentInsets()
 	}
 
 	override fun onResume() {

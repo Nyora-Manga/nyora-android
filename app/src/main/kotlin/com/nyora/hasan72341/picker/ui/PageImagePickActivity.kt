@@ -19,6 +19,7 @@ import com.nyora.hasan72341.core.exceptions.resolve.DialogErrorObserver
 import com.nyora.hasan72341.core.nav.AppRouter
 import com.nyora.hasan72341.core.ui.BaseActivity
 import com.nyora.hasan72341.core.util.ext.consume
+import com.nyora.hasan72341.core.util.ext.contentInsetsType
 import com.nyora.hasan72341.core.util.ext.observe
 import com.nyora.hasan72341.core.util.ext.observeEvent
 import com.nyora.hasan72341.databinding.ActivityPickerBinding
@@ -71,7 +72,7 @@ class PageImagePickActivity : BaseActivity<ActivityPickerBinding>(),
 	}
 
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val typeMask = WindowInsetsCompat.Type.systemBars()
+		val typeMask = contentInsetsType
 		val bars = insets.getInsets(typeMask)
 		viewBinding.appbar.updatePadding(
 			left = bars.left,

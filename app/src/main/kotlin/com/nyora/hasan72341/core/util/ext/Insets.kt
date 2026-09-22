@@ -5,6 +5,17 @@ import androidx.core.graphics.Insets
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsCompat.Type.InsetsType
 
+/**
+ * System bars plus the display cutout.
+ *
+ * Since the app targets API 35+ the window is always laid out under the cutout, so insetting by
+ * [WindowInsetsCompat.Type.systemBars] alone leaves content beneath the notch or punch-hole of
+ * devices that have one. It is most visible in landscape and on foldable cover screens, where the
+ * cutout sits on a side edge and the status bar inset is zero.
+ */
+val contentInsetsType: Int
+	get() = WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+
 fun Insets.end(view: View): Int {
 	return if (view.isRtl) left else right
 }
@@ -13,18 +24,16 @@ fun Insets.start(view: View): Int {
 	return if (view.isRtl) right else left
 }
 
-@Deprecated("")
-val WindowInsetsCompat.systemBarsInsets: Insets
-	get() = getInsets(WindowInsetsCompat.Type.systemBars())
+val WindowInsetsCompat.contentInsets: Insets
+	get() = getInsets(contentInsetsType)
 
-@Deprecated("")
-fun WindowInsetsCompat.consumeSystemBarsInsets(
+fun WindowInsetsCompat.consumeContentInsets(
 	left: Boolean = false,
 	top: Boolean = false,
 	right: Boolean = false,
 	bottom: Boolean = false,
 ): WindowInsetsCompat {
-	val barsInsets = systemBarsInsets
+	val barsInsets = contentInsets
 	val insets = Insets.of(
 		if (left) 0 else barsInsets.left,
 		if (top) 0 else barsInsets.top,
@@ -32,7 +41,7 @@ fun WindowInsetsCompat.consumeSystemBarsInsets(
 		if (bottom) 0 else barsInsets.bottom,
 	)
 	return WindowInsetsCompat.Builder(this)
-		.setInsets(WindowInsetsCompat.Type.systemBars(), insets)
+		.setInsets(contentInsetsType, insets)
 		.build()
 }
 
@@ -62,17 +71,15 @@ fun WindowInsetsCompat.consumeAll(
 	.setInsets(typeMask, Insets.NONE)
 	.build()
 
-@Deprecated("")
-fun WindowInsetsCompat.consumeSystemBarsInsets(
+fun WindowInsetsCompat.consumeContentInsets(
 	view: View,
 	start: Boolean = false,
 	top: Boolean = false,
 	end: Boolean = false,
 	bottom: Boolean = false,
-): WindowInsetsCompat = consume(view, WindowInsetsCompat.Type.systemBars(), start, top, end, bottom)
+): WindowInsetsCompat = consume(view, contentInsetsType, start, top, end, bottom)
 
-@Deprecated("")
-fun WindowInsetsCompat.consumeAllSystemBarsInsets() = consumeAll(WindowInsetsCompat.Type.systemBars())
+fun WindowInsetsCompat.consumeAllContentInsets() = consumeAll(contentInsetsType)
 
 @Deprecated("")
 fun Insets.consume(

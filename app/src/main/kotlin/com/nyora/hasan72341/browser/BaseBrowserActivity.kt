@@ -16,6 +16,7 @@ import com.nyora.hasan72341.core.parser.ParserMangaRepository
 import com.nyora.hasan72341.core.ui.BaseActivity
 import com.nyora.hasan72341.core.util.ext.configureForParser
 import com.nyora.hasan72341.core.util.ext.consumeAll
+import com.nyora.hasan72341.core.util.ext.contentInsetsType
 import com.nyora.hasan72341.databinding.ActivityBrowserBinding
 import com.nyora.hasan72341.mihon.parsers.model.MangaSource
 import com.nyora.hasan72341.mihon.parsers.util.nullIfEmpty
@@ -63,7 +64,7 @@ abstract class BaseBrowserActivity : BaseActivity<ActivityBrowserBinding>(), Bro
 		v: View,
 		insets: WindowInsetsCompat
 	): WindowInsetsCompat {
-		val type = WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime()
+		val type = contentInsetsType or WindowInsetsCompat.Type.ime()
 		val barsInsets = insets.getInsets(type)
 		viewBinding.webView.updatePadding(
 			left = barsInsets.left,

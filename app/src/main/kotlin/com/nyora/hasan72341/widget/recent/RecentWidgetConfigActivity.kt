@@ -9,8 +9,8 @@ import dagger.hilt.android.AndroidEntryPoint
 import com.nyora.hasan72341.R
 import com.nyora.hasan72341.core.prefs.AppWidgetConfig
 import com.nyora.hasan72341.core.ui.BaseActivity
-import com.nyora.hasan72341.core.util.ext.consumeAllSystemBarsInsets
-import com.nyora.hasan72341.core.util.ext.systemBarsInsets
+import com.nyora.hasan72341.core.util.ext.consumeAllContentInsets
+import com.nyora.hasan72341.core.util.ext.contentInsets
 import com.nyora.hasan72341.databinding.ActivityAppwidgetRecentBinding
 
 @AndroidEntryPoint
@@ -38,14 +38,14 @@ class RecentWidgetConfigActivity :
 	}
 
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val barsInsets = insets.systemBarsInsets
+		val barsInsets = insets.contentInsets
 		viewBinding.root.setPadding(
 			barsInsets.left,
 			barsInsets.top,
 			barsInsets.right,
 			barsInsets.bottom,
 		)
-		return insets.consumeAllSystemBarsInsets()
+		return insets.consumeAllContentInsets()
 	}
 
 	override fun onClick(v: View) {

@@ -72,6 +72,7 @@ import com.nyora.hasan72341.reader.ui.tapgrid.TapGridDispatcher
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import androidx.appcompat.R as appcompatR
+import com.nyora.hasan72341.core.util.ext.contentInsetsType
 
 @AndroidEntryPoint
 class ReaderActivity :
@@ -416,8 +417,8 @@ class ReaderActivity :
 
     override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
         gestureInsets = insets.getInsets(WindowInsetsCompat.Type.systemGestures())
-        val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-        val densityOffset = (8 * resources.displayMetrics.density).toInt()
+        val systemBars = insets.getInsets(contentInsetsType)
+        val densityOffset = (12 * resources.displayMetrics.density).toInt()
         
         // Merge top bar with the status bar/notch area
         viewBinding.toolbar.updateLayoutParams<ViewGroup.MarginLayoutParams> {
@@ -427,8 +428,8 @@ class ReaderActivity :
         }
         viewBinding.toolbar.updatePadding(
             top = systemBars.top,
-            left = (12 * resources.displayMetrics.density).toInt(),
-            right = (12 * resources.displayMetrics.density).toInt()
+            left = densityOffset + systemBars.left,
+            right = densityOffset + systemBars.right,
         )
         
         viewBinding.actionsView.updateLayoutParams<ViewGroup.MarginLayoutParams> {
@@ -438,9 +439,9 @@ class ReaderActivity :
         }
         viewBinding.actionsView.updatePadding(
             bottom = systemBars.bottom,
-            left = (12 * resources.displayMetrics.density).toInt(),
-            right = (12 * resources.displayMetrics.density).toInt(),
-            top = (6 * resources.displayMetrics.density).toInt()
+            left = densityOffset + systemBars.left,
+            right = densityOffset + systemBars.right,
+            top = densityOffset / 2,
         )
         viewBinding.infoBar.updatePadding(
             top = systemBars.top,
@@ -452,7 +453,7 @@ class ReaderActivity :
             viewBinding.actionsView.takeIf { it.isVisible }?.height ?: systemBars.bottom,
         )
         return WindowInsetsCompat.Builder(insets)
-            .setInsets(WindowInsetsCompat.Type.systemBars(), innerInsets)
+            .setInsets(contentInsetsType, innerInsets)
             .build()
     }
 

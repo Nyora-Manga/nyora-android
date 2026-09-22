@@ -16,6 +16,7 @@ import com.nyora.hasan72341.R
 import com.nyora.hasan72341.core.ui.BaseActivity
 import com.nyora.hasan72341.core.ui.util.DefaultTextWatcher
 import com.nyora.hasan72341.core.util.ext.consume
+import com.nyora.hasan72341.core.util.ext.contentInsetsType
 import com.nyora.hasan72341.databinding.ActivityKitsuAuthBinding
 import com.nyora.hasan72341.mihon.parsers.util.urlEncoded
 
@@ -41,7 +42,7 @@ class KitsuAuthActivity : BaseActivity<ActivityKitsuAuthBinding>(),
 		v: View,
 		insets: WindowInsetsCompat
 	): WindowInsetsCompat {
-		val typeMask = WindowInsetsCompat.Type.systemBars()
+		val typeMask = contentInsetsType
 		val screenPadding = v.resources.getDimensionPixelOffset(R.dimen.screen_padding)
 		val barsInsets = insets.getInsets(typeMask)
 		viewBinding.root.updatePadding(top = barsInsets.top)

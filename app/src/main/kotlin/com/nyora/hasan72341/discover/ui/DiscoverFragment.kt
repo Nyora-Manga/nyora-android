@@ -13,9 +13,9 @@ import com.nyora.hasan72341.R
 import com.nyora.hasan72341.core.nav.router
 import com.nyora.hasan72341.core.ui.BaseFragment
 import com.nyora.hasan72341.core.ui.util.RecyclerViewOwner
-import com.nyora.hasan72341.core.util.ext.consumeAllSystemBarsInsets
+import com.nyora.hasan72341.core.util.ext.consumeAllContentInsets
 import com.nyora.hasan72341.core.util.ext.observe
-import com.nyora.hasan72341.core.util.ext.systemBarsInsets
+import com.nyora.hasan72341.core.util.ext.contentInsets
 import com.nyora.hasan72341.databinding.FragmentDiscoverBinding
 import com.nyora.hasan72341.discover.ui.adapter.DiscoverAdapter
 import com.nyora.hasan72341.list.ui.adapter.ListHeaderClickListener
@@ -67,7 +67,7 @@ class DiscoverFragment :
 	}
 
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val barsInsets = insets.systemBarsInsets
+		val barsInsets = insets.contentInsets
 		val basePadding = v.resources.getDimensionPixelOffset(R.dimen.list_spacing_normal)
 		viewBinding?.recyclerView?.setPadding(
 			/* left = */ barsInsets.left + basePadding,
@@ -75,7 +75,7 @@ class DiscoverFragment :
 			/* right = */ barsInsets.right + basePadding,
 			/* bottom = */ barsInsets.bottom + basePadding,
 		)
-		return insets.consumeAllSystemBarsInsets()
+		return insets.consumeAllContentInsets()
 	}
 
 	override fun onListHeaderClick(item: ListHeader, view: View) {

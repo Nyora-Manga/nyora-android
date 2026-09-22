@@ -32,6 +32,7 @@ import com.nyora.hasan72341.core.ui.util.PagerNestedScrollHelper
 import com.nyora.hasan72341.core.ui.util.RecyclerViewOwner
 import com.nyora.hasan72341.core.util.RecyclerViewScrollCallback
 import com.nyora.hasan72341.core.util.ext.consumeAll
+import com.nyora.hasan72341.core.util.ext.contentInsetsType
 import com.nyora.hasan72341.core.util.ext.findAppCompatDelegate
 import com.nyora.hasan72341.core.util.ext.findParentCallback
 import com.nyora.hasan72341.core.util.ext.observe
@@ -152,7 +153,7 @@ class PagesFragment :
 	}
 
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val typeBask = WindowInsetsCompat.Type.systemBars()
+		val typeBask = contentInsetsType
 		val barsInsets = insets.getInsets(typeBask)
 		viewBinding?.recyclerView?.setPadding(
 			barsInsets.left,
