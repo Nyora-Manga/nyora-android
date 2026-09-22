@@ -42,8 +42,21 @@ object DataDrivenCatalogueParser {
 	 * or empty `sources`, a malformed id, or an id repeated case-insensitively. Skipped rows are
 	 * dropped silently, but a catalogue that carries no `sources` array at all never reads as empty.
 	 */
-	fun parse(json: String): List<DataDrivenMangaSource> = try {
-		val rows = JSONObject(json).optJSONArray("sources")
+	fun parse(json: String): List<DataDrivenMangaSource> = parse(parseDocument(json))
+
+	/** The catalogue as a JSON document, so a caller can read [hashOf] before paying for [parse]. */
+	fun parseDocument(json: String): JSONObject = try {
+		JSONObject(json)
+	} catch (e: Exception) {
+		throw IllegalArgumentException("Invalid data-driven catalogue", e)
+	}
+
+	/** The generator's content hash of [document], or null for a catalogue that carries none. */
+	fun hashOf(document: JSONObject): String? = document.optString("hash").takeIf { it.isNotBlank() }
+
+	/** See [parse]. */
+	fun parse(document: JSONObject): List<DataDrivenMangaSource> = try {
+		val rows = document.optJSONArray("sources")
 			?: throw IllegalArgumentException("Data-driven catalogue must contain a sources array")
 		require(rows.length() > 0) { "Data-driven catalogue contains no sources" }
 		val seenIds = HashSet<String>(rows.length())

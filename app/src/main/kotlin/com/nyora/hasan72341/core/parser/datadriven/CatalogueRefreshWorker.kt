@@ -9,6 +9,7 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.nyora.hasan72341.BuildConfig
 import com.nyora.hasan72341.core.network.BaseHttpClient
 import com.nyora.hasan72341.core.util.ext.printStackTraceDebug
 import com.nyora.hasan72341.mihon.parsers.util.runCatchingCancellable
@@ -25,9 +26,11 @@ import okhttp3.Request
 import java.util.concurrent.TimeUnit
 
 /**
- * Keeps the data-driven catalogue current: once a day it downloads the published catalogue and
- * hands it to [DataDrivenCatalogue.replace], which swaps the snapshot only when the download
- * parses. A failed refresh therefore leaves the previous catalogue serving every source.
+ * Keeps the data-driven catalogue current: once a day it downloads the published catalogue of the
+ * data branch this build bundles (`.gitmodules` pins it, `BuildConfig.NYORA_CATALOGUE_REF` carries
+ * it) and hands it to [DataDrivenCatalogue.replace], which swaps the snapshot only when the
+ * download parses and differs from the catalogue already serving. A failed refresh therefore leaves
+ * the previous catalogue serving every source, and a refresh can never fall back to another branch.
  */
 @HiltWorker
 class CatalogueRefreshWorker @AssistedInject constructor(
@@ -61,8 +64,20 @@ class CatalogueRefreshWorker @AssistedInject constructor(
 
 		private const val TAG = "CatalogueRefresh"
 		private const val UNIQUE_WORK_NAME = "CatalogueRefresh"
-		private const val CATALOGUE_URL =
-			"https://raw.githubusercontent.com/nyora-manga/nyora-data-driven/main/catalogue.json"
+		private const val CATALOGUE_REPOSITORY = "https://raw.githubusercontent.com/nyora-manga/nyora-data-driven"
+
+		/** Git ref names this worker will put in a URL path: no spaces and no `..` segments. */
+		private val REF_REGEX = Regex("[A-Za-z0-9._/-]+")
+
+		/** The published catalogue of the ref this build's data submodule is pinned to. */
+		private val CATALOGUE_URL: String = catalogueUrl(BuildConfig.NYORA_CATALOGUE_REF)
+
+		/** `catalogue.json` of [ref] in the data repository; a ref that is not a usable path segment falls back to `main`. */
+		internal fun catalogueUrl(ref: String): String {
+			val trimmed = ref.trim()
+			val safeRef = trimmed.takeIf { REF_REGEX.matches(it) && !it.contains("..") } ?: "main"
+			return "$CATALOGUE_REPOSITORY/$safeRef/catalogue.json"
+		}
 
 		/** The JavaScript parser OTA this worker replaces; upgraded installs still have it enqueued. */
 		private val RETIRED_WORK_NAMES = arrayOf("ParserOtaUpdate", "ParserOtaUpdateNow")

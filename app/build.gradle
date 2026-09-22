@@ -31,6 +31,32 @@ String supabaseEnv(String key) {
 	return ''
 }
 
+// The branch the data submodule is pinned to in .gitmodules (the submodule whose path is `data`,
+// or failing that the one named `data`), falling back to main. The catalogue refresh downloads from
+// this ref so it can never replace the bundled catalogue with one from another branch.
+String dataDrivenCatalogueRef() {
+	def gitmodules = rootProject.file('.gitmodules')
+	if (!gitmodules.exists()) return 'main'
+	def sections = [:]
+	String current = null
+	for (String line : gitmodules.readLines()) {
+		def t = line.trim()
+		if (!t || t.startsWith('#') || t.startsWith(';')) continue
+		def header = (t =~ /^\[submodule\s+"([^"]+)"\]$/)
+		if (header.matches()) {
+			current = header.group(1)
+			sections[current] = [:]
+			continue
+		}
+		if (current == null) continue
+		def i = t.indexOf('=')
+		if (i > 0) sections[current][t.substring(0, i).trim()] = t.substring(i + 1).trim()
+	}
+	def data = sections.values().find { it['path'] == 'data' } ?: sections['data']
+	def ref = data?.get('branch')
+	return ref ? ref : 'main'
+}
+
 android {
 	compileSdk = 36
 	namespace = 'com.nyora.hasan72341'
@@ -58,6 +84,7 @@ android {
 		testInstrumentationRunner 'com.nyora.hasan72341.HiltTestRunner'
 		buildConfigField "String", "SUPABASE_URL", "\"${supabaseEnv('SUPABASE_URL')}\""
 		buildConfigField "String", "SUPABASE_ANON_KEY", "\"${supabaseEnv('SUPABASE_ANON_KEY')}\""
+		buildConfigField "String", "NYORA_CATALOGUE_REF", "\"${dataDrivenCatalogueRef()}\""
 		ksp {
 			arg('room.generateKotlin', 'true')
 		}
