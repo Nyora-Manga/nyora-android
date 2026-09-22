@@ -12,10 +12,9 @@ import com.nyora.hasan72341.core.model.TestMangaSource
 import com.nyora.hasan72341.core.model.UnknownMangaSource
 import com.nyora.hasan72341.core.network.MangaHttpClient
 import com.nyora.hasan72341.core.parser.datadriven.DataDrivenCatalogue
+import com.nyora.hasan72341.core.parser.datadriven.findCanonical
 import com.nyora.hasan72341.core.prefs.SourceSettings
 import com.nyora.hasan72341.local.data.LocalMangaRepository
-import com.nyora.hasan72341.js.NyoraJsMangaRepository
-import com.nyora.hasan72341.js.NyoraJsMangaSource
 import com.nyora.hasan72341.mihon.parsers.MangaLoaderContext
 import com.nyora.hasan72341.mihon.parsers.config.ConfigKey
 import com.nyora.hasan72341.mihon.parsers.model.Manga
@@ -73,7 +72,6 @@ interface MangaRepository {
 		private val loaderContext: MangaLoaderContext,
 		private val contentCache: MemoryContentCache,
 		private val mirrorSwitcher: MirrorSwitcher,
-		private val nyoraJsSourcesManager: com.nyora.hasan72341.js.NyoraJsSourcesManager,
 		private val dataDrivenCatalogue: DataDrivenCatalogue,
 		@MangaHttpClient private val okHttpClient: OkHttpClient,
 	) {
@@ -108,25 +106,12 @@ interface MangaRepository {
 
 			is DataDrivenMangaSource -> createDataDrivenRepository(source)
 
-			is NyoraJsMangaSource -> NyoraJsMangaRepository(
-				source = source,
-				cache = contentCache,
-				engine = nyoraJsSourcesManager.engine,
-			)
-
 			else -> {
 				if (source.name.startsWith(DataDrivenMangaSource.PREFIX)) {
-					dataDrivenCatalogue.find(source.name)?.let {
+					// A row persisted before a rename or retirement arrives here as an anonymous
+					// source; the same canonicalisation the source factory applies finds its entry.
+					dataDrivenCatalogue.findCanonical(source.name)?.let {
 						return createDataDrivenRepository(it)
-					}
-				}
-				if (source.name.startsWith("JS_") || source.name.startsWith("data:")) {
-					nyoraJsSourcesManager.getByName(source.name)?.let {
-						return NyoraJsMangaRepository(
-							source = it,
-							cache = contentCache,
-							engine = nyoraJsSourcesManager.engine,
-						)
 					}
 				}
 				null

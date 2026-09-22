@@ -12,7 +12,7 @@
 
 	<Preference
 		android:key="about_parser_info"
-		android:title="@string/parser_bundle"
+		android:title="@string/source_catalogue"
 		android:summary="@string/checking_for_updates"
 		android:persistent="false" />
 

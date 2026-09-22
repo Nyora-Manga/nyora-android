@@ -11,13 +11,11 @@ import androidx.core.content.ContextCompat
 import androidx.core.text.inSpans
 import com.nyora.hasan72341.R
 import com.nyora.hasan72341.core.parser.datadriven.DataDrivenCatalogue
-import com.nyora.hasan72341.core.parser.datadriven.LEGACY_SOURCE_RENAMES
-import com.nyora.hasan72341.core.parser.datadriven.canonicalDataSourceId
+import com.nyora.hasan72341.core.parser.datadriven.findCanonical
 import com.nyora.hasan72341.core.parser.external.ExternalMangaSource
 import com.nyora.hasan72341.core.util.ext.getDisplayName
 import com.nyora.hasan72341.core.util.ext.toLocale
 import com.nyora.hasan72341.core.util.ext.toLocaleOrNull
-import com.nyora.hasan72341.js.NyoraJsMangaSource
 import com.nyora.hasan72341.mihon.parsers.model.ContentType
 import com.nyora.hasan72341.mihon.parsers.model.MangaParserSource
 import com.nyora.hasan72341.mihon.parsers.model.MangaSource
@@ -44,15 +42,9 @@ fun MangaSource(name: String?): MangaSource {
 		TestMangaSource.name -> return TestMangaSource
 	}
 	if (name.startsWith(DataDrivenMangaSource.PREFIX)) {
-		val catalogue = DataDrivenCatalogue.instance
-		if (catalogue != null) {
-			// Rows persisted under a renamed or retired spelling still have to reach their row, or
-			// their history, favourites and downloads read as an unknown source.
-			val id = name.removePrefix(DataDrivenMangaSource.PREFIX)
-			val canonical = DataDrivenMangaSource.PREFIX + canonicalDataSourceId(id)
-			LEGACY_SOURCE_RENAMES[name]?.let { renamed -> catalogue.find(renamed)?.let { return it } }
-			catalogue.find(canonical)?.let { return it }
-		}
+		// Rows persisted under a renamed or retired spelling still have to reach their row, or
+		// their history, favourites and downloads read as an unknown source.
+		DataDrivenCatalogue.instance?.findCanonical(name)?.let { return it }
 		// An unknown data source is still a data source: keep its identity so a catalogue refresh
 		// can resolve it later instead of orphaning the rows that reference it.
 		return AnonymousMangaSource(name)
@@ -86,7 +78,6 @@ fun MangaSource.isNsfw(): Boolean = when (val source = unwrap()) {
 	is MangaParserSource -> source.contentType.toNyoraContentType().isHentai()
 	// The catalogue marks adult rows explicitly; several of them carry a non-hentai content type.
 	is DataDrivenMangaSource -> source.nsfw || source.contentType.isHentai()
-	is NyoraJsMangaSource -> source.contentType.isHentai()
 	is com.nyora.hasan72341.mihon.parsers.model.ContentSource -> source.contentType.isHentai()
 	else -> false
 }
@@ -138,7 +129,6 @@ fun MangaSource.getSummary(context: Context): String? = when (val source = unwra
 
 	is ExternalMangaSource -> context.getString(R.string.external_source)
 
-	is NyoraJsMangaSource,
 	is com.nyora.hasan72341.mihon.parsers.model.ContentSource -> {
 		val contentType = source.contentType
 		val type = context.getString(contentType.titleResId)
@@ -155,7 +145,6 @@ fun MangaSource.getTitle(context: Context): String = when (val source = unwrap()
 	TestMangaSource -> context.getString(R.string.test_parser)
 	is ExternalMangaSource -> source.resolveName(context)
 	is DataDrivenMangaSource -> source.title
-	is NyoraJsMangaSource -> source.title
 	else -> when {
 		source.name.startsWith("JS_") -> source.name.removePrefix("JS_").replace('_', ' ')
 		else -> context.getString(R.string.unknown)

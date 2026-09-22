@@ -8,7 +8,6 @@ import com.nyora.hasan72341.core.util.progress.Progress
 import com.nyora.hasan72341.explore.data.MangaSourcesRepository
 import java.io.InputStream
 import java.io.OutputStream
-import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.FlowCollector
@@ -29,10 +28,9 @@ class BackupRepository @Inject constructor(
 		initialSnapshot = projector::snapshot,
 		materializer = NyoraRoomPortableMaterializer(database),
 		observerGate = NyoraRoomBackupObserverGate(database, backupObserver),
+		// The catalogue already exposes the canonical `data:` identity backups are written under.
 		availableSourceIds = {
-			mangaSourcesRepository.allMangaSources.mapTo(linkedSetOf()) { source ->
-				"data:${source.jsId.lowercase(Locale.ROOT).replace('_', '-')}"
-			}
+			mangaSourcesRepository.allMangaSources.mapTo(linkedSetOf()) { it.name }
 		},
 	)
 

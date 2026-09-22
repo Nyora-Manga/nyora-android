@@ -1,6 +1,7 @@
 package com.nyora.hasan72341.core.parser.datadriven
 
 import android.content.Context
+import androidx.annotation.WorkerThread
 import com.nyora.hasan72341.core.model.DataDrivenMangaSource
 import com.nyora.hasan72341.core.util.ext.printStackTraceDebug
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -21,8 +22,9 @@ class DataDrivenCatalogue @Inject constructor(
 
 	private val cacheFile = File(context.filesDir, CACHE_FILE_NAME)
 
+	/** Null until the first snapshot is needed: parsing the catalogue costs too much to do in a constructor. */
 	@Volatile
-	private var snapshot: Snapshot = loadInitialSnapshot()
+	private var snapshot: Snapshot? = null
 
 	init {
 		instance = this
@@ -30,14 +32,23 @@ class DataDrivenCatalogue @Inject constructor(
 
 	/** The browsable sources of the current snapshot, in catalogue order. */
 	val sources: List<DataDrivenMangaSource>
-		get() = snapshot.entries
+		get() = currentSnapshot().entries
 
 	/** Bumped by every successful [replace], so callers can tell a swapped catalogue from a stale one. */
 	val revision: Long
-		get() = snapshot.revision
+		get() = currentSnapshot().revision
 
 	/** Resolve a persisted `data:<id>` identity; the id half is matched case-insensitively. */
-	fun find(name: String): DataDrivenMangaSource? = snapshot.byName[name.lowercase(Locale.ROOT)]
+	fun find(name: String): DataDrivenMangaSource? = currentSnapshot().byName[name.lowercase(Locale.ROOT)]
+
+	/**
+	 * Parse the first snapshot now, so the first source lookup does not pay for 400 KB of JSON.
+	 * [com.nyora.hasan72341.core.BaseApp] calls this off the main thread during startup.
+	 */
+	@WorkerThread
+	fun warmUp() {
+		currentSnapshot()
+	}
 
 	/**
 	 * Validate [json] and, only if it parses, publish it as the current catalogue and cache it.
@@ -49,10 +60,15 @@ class DataDrivenCatalogue @Inject constructor(
 	fun replace(json: String): Int {
 		val entries = DataDrivenCatalogueParser.parse(json)
 		require(entries.isNotEmpty()) { "Data-driven catalogue contains no supported sources" }
-		snapshot = Snapshot(entries, snapshot.revision + 1)
+		// Reading the previous revision must not parse a snapshot this call is about to discard.
+		snapshot = Snapshot(entries, (snapshot?.revision ?: 0L) + 1)
 		// A cache write that fails only costs the next cold start a read of the bundled asset.
 		runCatching { writeCache(json) }.onFailure { it.printStackTraceDebug(TAG) }
 		return entries.size
+	}
+
+	private fun currentSnapshot(): Snapshot = snapshot ?: synchronized(this) {
+		snapshot ?: loadInitialSnapshot().also { snapshot = it }
 	}
 
 	private fun loadInitialSnapshot(): Snapshot {
@@ -99,4 +115,16 @@ class DataDrivenCatalogue @Inject constructor(
 		var instance: DataDrivenCatalogue? = null
 			private set
 	}
+}
+
+/**
+ * Resolve a persisted `data:` identity through the renames and retirements that happened after the
+ * row was written, so history, favourites and downloads stored under an old spelling still reach
+ * their source. Returns null when no row of the current catalogue claims [name].
+ */
+internal fun DataDrivenCatalogue.findCanonical(name: String): DataDrivenMangaSource? {
+	val lowerName = name.lowercase(Locale.ROOT)
+	LEGACY_SOURCE_RENAMES[lowerName]?.let { renamed -> find(renamed)?.let { return it } }
+	val id = lowerName.removePrefix(DataDrivenMangaSource.PREFIX)
+	return find(DataDrivenMangaSource.PREFIX + canonicalDataSourceId(id))
 }
