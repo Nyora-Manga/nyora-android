@@ -1,0 +1,84 @@
+{
+  "sources": [
+    {
+      "id": "HIPERDEX",
+      "name": "HiperToon",
+      "lang": "en",
+      "nsfw": true,
+      "contentType": "HENTAI",
+      "engine": "madara",
+      "domain": "https://hiperdex.com/",
+      "broken": false,
+      "pageSize": 36,
+      "config": { "listUrl": "" },
+      "needsCustomLogic": true
+    },
+    {
+      "id": "komikzoid",
+      "name": "KomikzoId",
+      "lang": "id",
+      "nsfw": false,
+      "contentType": "MANGA",
+      "engine": "animebootstrap",
+      "domain": "komikzoid.id",
+      "broken": false,
+      "pageSize": 24,
+      "config": {},
+      "antiBot": "cloudflare",
+      "cfWall": "B",
+      "needsCustomLogic": false
+    },
+    {
+      "id": "DEADONE",
+      "name": "Dead One",
+      "lang": "en",
+      "engine": "madara",
+      "domain": "deadone.example",
+      "broken": true,
+      "brokenReason": "domain parked",
+      "pageSize": 12,
+      "config": {}
+    },
+    {
+      "id": "TMOMANGA",
+      "name": "TmoManga",
+      "lang": "es",
+      "engine": "madara",
+      "domain": "tmomanga.com",
+      "broken": false,
+      "pageSize": 12,
+      "config": { "tagPrefix": "genero/" }
+    },
+    {
+      "id": "asurascans_us",
+      "name": "Asura Scans",
+      "lang": "en",
+      "engine": "asurascans",
+      "domain": "asurascans.com",
+      "broken": false,
+      "pageSize": 18,
+      "config": {}
+    },
+    {
+      "id": "MANGAFIRE_EN",
+      "name": "MangaFire",
+      "lang": "en",
+      "nsfw": false,
+      "engine": "mangafire",
+      "domain": "mangafire.to",
+      "broken": false,
+      "pageSize": 50,
+      "config": { "language": "en" }
+    },
+    {
+      "id": "NEWENGINEONLY",
+      "name": "Future Engine",
+      "lang": "en",
+      "engine": "nonexistent",
+      "domain": "future.example",
+      "broken": false,
+      "pageSize": 20,
+      "config": {}
+    }
+  ]
+}

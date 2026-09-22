@@ -10,6 +10,7 @@ import androidx.annotation.StringRes
 import androidx.core.content.ContextCompat
 import androidx.core.text.inSpans
 import com.nyora.hasan72341.R
+import com.nyora.hasan72341.core.parser.datadriven.DataDrivenCatalogue
 import com.nyora.hasan72341.core.parser.external.ExternalMangaSource
 import com.nyora.hasan72341.core.util.ext.getDisplayName
 import com.nyora.hasan72341.core.util.ext.toLocale
@@ -40,8 +41,10 @@ fun MangaSource(name: String?): MangaSource {
 		LocalMangaSource.name -> return LocalMangaSource
 		TestMangaSource.name -> return TestMangaSource
 	}
-	if (name.startsWith("data:")) {
-		return AnonymousMangaSource(name)
+	if (name.startsWith(DataDrivenMangaSource.PREFIX)) {
+		// An unknown data source is still a data source: keep its identity so a catalogue refresh
+		// can resolve it later instead of orphaning the rows that reference it.
+		return DataDrivenCatalogue.instance?.find(name) ?: AnonymousMangaSource(name)
 	}
 	if (name.startsWith("MIHON_") || name.startsWith("mihon:") || name.all(Char::isDigit)) {
 		return UnknownMangaSource
