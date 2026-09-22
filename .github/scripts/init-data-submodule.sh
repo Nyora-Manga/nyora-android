@@ -18,7 +18,8 @@ fail() {
 	echo "::error title=data submodule unavailable::$1"
 	echo "The build needs commit ${pin:-<unknown>} of ${url:-the data submodule}${branch:+, carried by branch $branch}."
 	echo "Fix it in one of these ways:"
-	echo "  * push the pinned commit to that remote;"
+	echo "  * from a checkout that has the commit, push it:"
+	echo "      git push origin ${pin:-<commit>}:refs/heads/${branch:-main}"
 	echo "  * repin the data submodule to a commit the remote already carries;"
 	echo "  * or build against a local checkout: ./gradlew -Pnyora.dataDrivenDir=/path/to/nyora-data-driven/data"
 	exit 1
