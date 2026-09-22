@@ -2,6 +2,7 @@ package com.nyora.hasan72341.details.ui
 
 import android.app.assist.AssistContent
 import android.content.Context
+import android.graphics.Rect
 import android.os.Bundle
 import android.text.SpannedString
 import android.view.Gravity
@@ -10,6 +11,8 @@ import android.view.ViewGroup
 import android.view.ViewTreeObserver
 import android.widget.Toast
 import androidx.activity.viewModels
+import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.constraintlayout.widget.ConstraintSet
 import androidx.core.text.buildSpannedString
 import androidx.core.text.inSpans
 import androidx.core.text.method.LinkMovementMethodCompat
@@ -65,6 +68,7 @@ import com.nyora.hasan72341.core.ui.image.TextDrawable
 import com.nyora.hasan72341.core.ui.image.TextViewTarget
 import com.nyora.hasan72341.core.ui.list.OnListItemClickListener
 import com.nyora.hasan72341.core.ui.sheet.BottomSheetCollapseCallback
+import com.nyora.hasan72341.core.ui.util.FoldSupport
 import com.nyora.hasan72341.core.ui.util.MenuInvalidator
 import com.nyora.hasan72341.core.ui.util.ReversibleActionObserver
 import com.nyora.hasan72341.core.ui.widgets.ChipsView
@@ -140,6 +144,8 @@ class DetailsActivity :
 	private val viewModel: DetailsViewModel by viewModels()
 	private lateinit var menuProvider: DetailsMenuProvider
 	private lateinit var infoBinding: LayoutDetailsTableBinding
+	private val foldSupport = FoldSupport(this)
+	private var hingeBounds: Rect? = null
 
 	override val bottomSheet: View?
 		get() = viewBinding.containerBottomSheet
@@ -182,6 +188,14 @@ class DetailsActivity :
 			BottomSheetBehavior.from(sheet).addBottomSheetCallback(
 				DetailsBottomSheetCallback(viewBinding.swipeRefreshLayout, checkNotNull(viewBinding.navbarDim)),
 			)
+		}
+
+		if (viewBinding.cardChapters != null) {
+			foldSupport.start()
+			foldSupport.fold.observe(this) { applyFoldPosture() }
+			viewBinding.root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+				applyFoldPosture()
+			}
 		}
 
 		val appRouter = router
@@ -371,6 +385,35 @@ class DetailsActivity :
 			}
 			return insets
 		}
+	}
+
+	/**
+	 * In book posture the chapters card starts at the far edge of the hinge, so the two panes land
+	 * on the two halves of the screen instead of crossing the fold.
+	 */
+	private fun applyFoldPosture() {
+		if (viewBinding.cardChapters == null || viewBinding.guidelineHinge == null) {
+			return
+		}
+		val root = viewBinding.root as? ConstraintLayout ?: return
+		val hinge = if (foldSupport.isBook) foldSupport.hingeBoundsIn(root) else null
+		if (hinge == hingeBounds) {
+			return
+		}
+		hingeBounds = hinge
+		val constraints = ConstraintSet()
+		constraints.clone(root)
+		if (hinge == null) {
+			constraints.connect(R.id.card_chapters, ConstraintSet.START, R.id.appbar, ConstraintSet.END)
+		} else {
+			if (root.layoutDirection == View.LAYOUT_DIRECTION_RTL) {
+				constraints.setGuidelineEnd(R.id.guideline_hinge, (root.width - hinge.left).coerceAtLeast(0))
+			} else {
+				constraints.setGuidelineBegin(R.id.guideline_hinge, hinge.right.coerceAtLeast(0))
+			}
+			constraints.connect(R.id.card_chapters, ConstraintSet.START, R.id.guideline_hinge, ConstraintSet.END)
+		}
+		constraints.applyTo(root)
 	}
 
 	private fun onFavoritesChanged(categories: Set<FavouriteCategory>) {

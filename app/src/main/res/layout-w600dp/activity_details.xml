@@ -337,6 +337,13 @@
 
 	</androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
+	<androidx.constraintlayout.widget.Guideline
+		android:id="@+id/guideline_hinge"
+		android:layout_width="wrap_content"
+		android:layout_height="wrap_content"
+		android:orientation="vertical"
+		app:layout_constraintGuide_percent="0.5" />
+
 	<com.google.android.material.card.MaterialCardView
 		android:id="@+id/card_chapters"
 		android:layout_width="0dp"

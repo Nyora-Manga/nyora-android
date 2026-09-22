@@ -2,8 +2,10 @@ package com.nyora.hasan72341.reader.ui.pager.doublepage
 
 import android.os.Bundle
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
 import android.view.animation.AccelerateDecelerateInterpolator
+import androidx.core.view.updatePaddingRelative
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.snackbar.Snackbar
@@ -46,6 +48,8 @@ open class DoubleReaderFragment : BaseReaderFragment<FragmentReaderDoubleBinding
 
 	private var recyclerLifecycleDispatcher: RecyclerViewLifecycleDispatcher? = null
 
+	private var spineOffset = 0
+
 	override fun onCreateViewBinding(
 		inflater: LayoutInflater,
 		container: ViewGroup?,
@@ -62,6 +66,7 @@ open class DoubleReaderFragment : BaseReaderFragment<FragmentReaderDoubleBinding
 				addOnScrollListener(it)
 			}
 			addOnScrollListener(PageScrollListener())
+			addOnChildAttachStateChangeListener(SpineOffsetListener())
 			DoublePageSnapHelper(settings).attachToRecyclerView(this)
 		}
 	}
@@ -106,6 +111,34 @@ open class DoubleReaderFragment : BaseReaderFragment<FragmentReaderDoubleBinding
 		exceptionResolver = exceptionResolver,
 		translator = translator,
 	)
+
+	override fun setSpineOffset(px: Int) {
+		if (px == spineOffset) {
+			return
+		}
+		spineOffset = px
+		val recyclerView = viewBinding?.recyclerView ?: return
+		for (i in 0 until recyclerView.childCount) {
+			applySpineOffset(recyclerView, recyclerView.getChildAt(i))
+		}
+	}
+
+	/**
+	 * The two pages of a spread meet at the gutter, so each of them is padded away from it by half
+	 * of the offset. The item width is left alone, keeping snapping and scrolling as they were.
+	 */
+	private fun applySpineOffset(recyclerView: RecyclerView, child: View) {
+		val position = recyclerView.getChildAdapterPosition(child)
+		if (position == RecyclerView.NO_POSITION) {
+			return
+		}
+		val isFirstOfSpread = position and 1 == 0
+		val padding = spineOffset / 2
+		child.updatePaddingRelative(
+			start = if (isFirstOfSpread) 0 else padding,
+			end = if (isFirstOfSpread) padding else 0,
+		)
+	}
 
 	override fun onZoomIn() {
 		(viewBinding ?: return).recyclerView.visiblePageHolders()
@@ -164,6 +197,16 @@ open class DoubleReaderFragment : BaseReaderFragment<FragmentReaderDoubleBinding
 		.findFirstCompletelyVisibleItemPosition().toPagePosition()
 
 	private fun Int.toPagePosition() = this and 1.inv()
+
+	private inner class SpineOffsetListener : RecyclerView.OnChildAttachStateChangeListener {
+
+		override fun onChildViewAttachedToWindow(view: View) {
+			val recyclerView = viewBinding?.recyclerView ?: return
+			applySpineOffset(recyclerView, view)
+		}
+
+		override fun onChildViewDetachedFromWindow(view: View) = Unit
+	}
 
 	private inner class PageScrollListener : RecyclerView.OnScrollListener() {
 

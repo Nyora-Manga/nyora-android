@@ -26,7 +26,6 @@ import androidx.transition.Slide
 import androidx.transition.TransitionManager
 import androidx.transition.TransitionSet
 import androidx.window.layout.FoldingFeature
-import androidx.window.layout.WindowInfoTracker
 import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
@@ -34,9 +33,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.nyora.hasan72341.R
@@ -49,7 +46,9 @@ import com.nyora.hasan72341.core.prefs.ReaderMode
 import com.nyora.hasan72341.core.ui.BaseFullscreenActivity
 import com.nyora.hasan72341.core.ui.dialog.buildAlertDialog
 import com.nyora.hasan72341.core.ui.dialog.setCheckbox
+import com.nyora.hasan72341.core.ui.util.FoldSupport
 import com.nyora.hasan72341.core.ui.util.MenuInvalidator
+import com.nyora.hasan72341.core.ui.util.Posture
 import com.nyora.hasan72341.core.ui.widgets.ZoomControl
 import com.nyora.hasan72341.core.util.IdlingDetector
 import com.nyora.hasan72341.core.util.ext.getThemeDimensionPixelOffset
@@ -118,6 +117,7 @@ class ReaderActivity :
 
     // Tracks whether the foldable device is in an unfolded state (half-opened or flat)
     private var isFoldUnfolded: Boolean = false
+    private val foldSupport = FoldSupport(this)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -197,7 +197,11 @@ class ReaderActivity :
         }
         addMenuProvider(ReaderMenuProvider(viewModel, ::translateCurrentPage))
 
-        observeWindowLayout()
+        foldSupport.start()
+        foldSupport.fold.observe(this) { onFoldChanged() }
+        viewBinding.container.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            applyFoldPosture()
+        }
 
         // Apply initial double-mode considering foldable setting
         applyDoubleModeAuto()
@@ -578,22 +582,63 @@ class ReaderActivity :
         }
     }
 
-    // Observe foldable window layout to auto-enable double-page if configured
-    private fun observeWindowLayout() {
-        WindowInfoTracker.getOrCreate(this)
-            .windowLayoutInfo(this)
-            .onEach { info ->
-                val fold = info.displayFeatures.filterIsInstance<FoldingFeature>().firstOrNull()
-                val unfolded = when (fold?.state) {
-                    FoldingFeature.State.HALF_OPENED, FoldingFeature.State.FLAT -> true
-                    else -> false
+    // Auto-enable double-page if configured, then lay the pages out around the hinge
+    private fun onFoldChanged() {
+        val unfolded = when (foldSupport.fold.value?.state) {
+            FoldingFeature.State.HALF_OPENED, FoldingFeature.State.FLAT -> true
+            else -> false
+        }
+        if (unfolded != isFoldUnfolded) {
+            isFoldUnfolded = unfolded
+            applyDoubleModeAuto()
+        }
+        applyFoldPosture()
+    }
+
+    /**
+     * Keeps page content clear of the hinge: in tabletop posture the pages stay above it and the
+     * bottom controls keep the half below it, in book posture the gutter of a spread is aligned
+     * with it. Only the reader container is padded, so the insets that [onApplyWindowInsets]
+     * applies to the bars are left as they are.
+     */
+    private fun applyFoldPosture() {
+        val container = viewBinding.container
+        val hinge = foldSupport.hingeBoundsIn(container)
+        var leftPadding = 0
+        var rightPadding = 0
+        var bottomPadding = 0
+        var spineOffset = 0
+        if (hinge != null) {
+            when (foldSupport.posture) {
+                // only a hinge that crosses the container has a side to keep the pages on
+                Posture.TABLETOP -> if (hinge.top > 0 && hinge.bottom < container.height) {
+                    bottomPadding = container.height - hinge.top
                 }
-                if (unfolded != isFoldUnfolded) {
-                    isFoldUnfolded = unfolded
-                    applyDoubleModeAuto()
+
+                Posture.BOOK -> if (hinge.left > 0 && hinge.right < container.width) {
+                    if (readerManager.isDoublePageMode) {
+                        spineOffset = hinge.width()
+                        // shift the middle of the container onto the middle of the hinge, so that
+                        // the gutter between the two pages of a spread lands on it
+                        val halfWidth = container.width / 2
+                        val shift = ((hinge.centerX() - halfWidth) * 2).coerceIn(-halfWidth, halfWidth)
+                        leftPadding = shift.coerceAtLeast(0)
+                        rightPadding = (-shift).coerceAtLeast(0)
+                    } else {
+                        leftPadding = hinge.width()
+                        rightPadding = hinge.width()
+                    }
                 }
+
+                Posture.NONE -> Unit
             }
-            .launchIn(lifecycleScope)
+        }
+        container.updatePadding(
+            left = leftPadding,
+            right = rightPadding,
+            bottom = bottomPadding,
+        )
+        readerManager.setSpineOffset(spineOffset)
     }
 
     private fun askForIncognitoMode() {

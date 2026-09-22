@@ -24,6 +24,11 @@ class ReaderManager(
 
 	private val modeMap = EnumMap<ReaderMode, Class<out BaseReaderFragment<*>>>(ReaderMode::class.java)
 
+	private var spineOffset = 0
+
+	var isDoublePageMode: Boolean = false
+		private set
+
 	init {
 		val useDoublePages = isLandscape() && settings.isReaderDoubleOnLandscape
 		invalidateTypesMap(useDoublePages)
@@ -43,7 +48,17 @@ class ReaderManager(
 		fragmentManager.commit {
 			setReorderingAllowed(true)
 			replace(container.id, readerClass, null, null)
+			runOnCommit { currentReader?.setSpineOffset(spineOffset) }
 		}
+	}
+
+	/**
+	 * Width to keep clear at the gutter of a spread, remembered so that a reader created later
+	 * gets it too.
+	 */
+	fun setSpineOffset(px: Int) {
+		spineOffset = px
+		currentReader?.setSpineOffset(px)
 	}
 
 	fun setDoubleReaderMode(isEnabled: Boolean) {
@@ -57,6 +72,7 @@ class ReaderManager(
 	}
 
 	private fun invalidateTypesMap(useDoublePages: Boolean) {
+		isDoublePageMode = useDoublePages
 		modeMap[ReaderMode.STANDARD] = if (useDoublePages) {
 			DoubleReaderFragment::class.java
 		} else {
