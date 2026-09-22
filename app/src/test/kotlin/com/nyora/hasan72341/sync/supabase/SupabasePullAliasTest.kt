@@ -1,8 +1,10 @@
 package com.nyora.hasan72341.sync.supabase
 
+import com.nyora.hasan72341.core.parser.datadriven.stableChapterId
 import com.nyora.hasan72341.core.parser.datadriven.stableMangaId
 import org.json.JSONArray
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -59,6 +61,101 @@ class SupabasePullAliasTest {
 			assertEquals(sourceRef, "data:hiperdex", canonicalPulledSourceId(sourceRef))
 			assertEquals(sourceRef, canonical, pulledMangaIdAlias("abc", sourceRef, "/manga/x"))
 		}
+	}
+
+	/** v2.1.6 pushed the stored `{"name":"JS_<ENUM>"}` as source_ref; its enum spelled every delimiter `_`. */
+	@Test
+	fun `a bare JavaScript enum source_ref resolves to the catalogue identity`() {
+		assertEquals("data:hiperdex", canonicalPulledSourceId("""{"name":"JS_HIPERDEX"}"""))
+		assertEquals("data:hiperdex", canonicalPulledSourceId("JS_HIPERDEX"))
+		assertEquals("data:manganato", canonicalPulledSourceId("JS_MANGANATO_GG"))
+		assertEquals("data:bananascan_com", canonicalPulledSourceId("JS_BANANASCAN_COM"))
+		assertEquals("data:mangafire_en", canonicalPulledSourceId("""{"name":"JS_MANGAFIRE_EN"}"""))
+		assertEquals(
+			stableMangaId("hiperdex", "/manga/x"),
+			pulledMangaIdAlias("abc", """{"name":"JS_HIPERDEX"}""", "/manga/x"),
+		)
+	}
+
+	/** A prefix with nothing behind it, or a spelling the contract rejects, is not a source. */
+	@Test
+	fun `an upgraded name that is not a canonical identity is rejected`() {
+		listOf("JS_", "DD_", "data:", "DD_bad id", """{"name":"data:Upper Case"}""").forEach { sourceRef ->
+			assertNull(sourceRef, canonicalPulledSourceId(sourceRef))
+			assertEquals(sourceRef, "abc", pulledMangaIdAlias("abc", sourceRef, "/manga/x"))
+		}
+	}
+
+	@Test
+	fun `the identity map lists the source of every data-source row, aliased or canonical`() {
+		val canonical = stableMangaId("hiperdex", "/manga/x")
+		val rows = JSONArray(
+			"""
+			[
+				{"id":"$canonical","url":"/manga/x","source_ref":"{\"name\":\"data:hiperdex\"}"},
+				{"id":"def","url":"/manga/y","source_ref":"JS_BANANASCAN_COM"},
+				{"id":"ghi","url":"/manga/z","source_ref":"{\"name\":\"LOCAL\"}"}
+			]
+			""",
+		)
+
+		val identities = pulledMangaIdentities(rows)
+
+		assertEquals(mapOf("def" to stableMangaId("bananascan_com", "/manga/y")), identities.aliases)
+		assertEquals(mapOf(canonical to "data:hiperdex", "def" to "data:bananascan_com"), identities.sourceIds)
+	}
+
+	/** The v2.6–v2.7.3 data-driven adapter stored the engine id, an href; its native adapters `<source>|chapter|<url>`. */
+	@Test
+	fun `a shipped chapter id carries its chapter url`() {
+		assertEquals("/manga/x/chapter-1", legacyChapterUrl("/manga/x/chapter-1"))
+		assertEquals("/manga/x/chapter-1", legacyChapterUrl("DD_MANGAFIRE_EN|chapter|/manga/x/chapter-1"))
+		assertEquals("https://site/manga/x/1", legacyChapterUrl("https://site/manga/x/1"))
+		// A hash, an engine's numeric id, and nothing at all carry no url.
+		assertNull(legacyChapterUrl(stableChapterId("hiperdex", "/manga/x/chapter-1")))
+		assertNull(legacyChapterUrl("-9223372036854775808"))
+		assertNull(legacyChapterUrl("42"))
+		assertNull(legacyChapterUrl(""))
+		assertNull(legacyChapterUrl("DD_MANGAFIRE_EN|chapter|"))
+	}
+
+	@Test
+	fun `a shipped chapter id of a data-source manga is re-keyed when the manga stores that chapter`() {
+		val stored = setOf("/manga/x/chapter-1", "/manga/x/chapter-2")
+
+		assertEquals(
+			stableChapterId("hiperdex", "/manga/x/chapter-1"),
+			pulledChapterIdAlias("/manga/x/chapter-1", "data:hiperdex") { stored },
+		)
+		assertEquals(
+			stableChapterId("mangafire_en", "/manga/x/chapter-2"),
+			pulledChapterIdAlias("DD_MANGAFIRE_EN|chapter|/manga/x/chapter-2", "data:mangafire_en") { stored },
+		)
+	}
+
+	@Test
+	fun `a hash and a row of a source this client does not hash for are kept as pushed`() {
+		val hash = stableChapterId("hiperdex", "/manga/x/chapter-1")
+		var storedRead = false
+
+		assertEquals(hash, pulledChapterIdAlias(hash, "data:hiperdex") { storedRead = true; emptySet() })
+		assertEquals("/manga/x/chapter-1", pulledChapterIdAlias("/manga/x/chapter-1", null) { storedRead = true; emptySet() })
+		assertFalse(storedRead)
+	}
+
+	@Test
+	fun `a shipped chapter id whose url no stored chapter carries cannot be settled`() {
+		assertNull(pulledChapterIdAlias("/manga/x/chapter-9", "data:hiperdex") { setOf("/manga/x/chapter-1") })
+		assertNull(pulledChapterIdAlias("/manga/x/chapter-9", "data:hiperdex") { emptySet() })
+	}
+
+	@Test
+	fun `stored chapter urls come out of the chapters blob`() {
+		val blob = """[{"id":"1","url":"/manga/x/chapter-1"},{"id":"2","url":"/manga/x/chapter-2"},{"id":"3"},"junk"]"""
+
+		assertEquals(setOf("/manga/x/chapter-1", "/manga/x/chapter-2"), storedChapterUrls(blob))
+		assertEquals(emptySet<String>(), storedChapterUrls("[]"))
+		assertEquals(emptySet<String>(), storedChapterUrls("not json"))
 	}
 
 	@Test

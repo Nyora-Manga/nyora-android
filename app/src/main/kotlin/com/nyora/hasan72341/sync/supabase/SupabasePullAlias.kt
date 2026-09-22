@@ -1,11 +1,10 @@
 package com.nyora.hasan72341.sync.supabase
 
+import com.nyora.hasan72341.backups.data.NyoraSourceIdentity
+import com.nyora.hasan72341.core.db.migrations.upgradedStoredSourceName
 import com.nyora.hasan72341.core.model.DataDrivenMangaSource
-import com.nyora.hasan72341.core.parser.datadriven.LEGACY_SOURCE_RENAMES
-import com.nyora.hasan72341.core.parser.datadriven.canonicalDataSourceId
-import com.nyora.hasan72341.core.parser.datadriven.decodeStoredSourceName
+import com.nyora.hasan72341.core.parser.datadriven.stableChapterId
 import com.nyora.hasan72341.core.parser.datadriven.stableMangaId
-import java.util.Locale
 import org.json.JSONArray
 
 /**
@@ -18,23 +17,20 @@ import org.json.JSONArray
  * canonical already.
  */
 
-/** Retired wrappers an older Android or web client stored a catalogue identity inside. */
-private val DATA_SOURCE_WRAPPERS = listOf(DataDrivenMangaSource.PREFIX, "JS_data:", "DD_")
+/** Delimiter of the `<source>|chapter|<url>` chapter id the shipped builds' native adapters wrote. */
+private const val NATIVE_CHAPTER_ID_DELIMITER = "|chapter|"
 
 /**
  * The canonical `data:<catalogue-id>` identity a synced `source_ref` resolves to, or null when the
  * row belongs to a source whose ids this client does not hash (`LOCAL`, `UNKNOWN`, a parser row).
+ *
+ * Every spelling a shipped client pushed is accepted: the JSON wrapper, `data:`, the `DD_` prefix
+ * of v2.6 to v2.7.3 and the bare `JS_<ENUM>` of v2.1.6, through the same upgrade the database
+ * migration applies, and the result must be an identity the backup contract accepts.
  */
 internal fun canonicalPulledSourceId(storedSourceRef: String): String? {
-	val decoded = decodeStoredSourceName(storedSourceRef)
-	val bare = DATA_SOURCE_WRAPPERS.firstNotNullOfOrNull { wrapper ->
-		decoded.removePrefix(wrapper).takeIf { it != decoded }
-	} ?: return null
-	if (bare.isEmpty()) return null
-	val renamed = LEGACY_SOURCE_RENAMES[DataDrivenMangaSource.PREFIX + bare.lowercase(Locale.ROOT)]
-		?.removePrefix(DataDrivenMangaSource.PREFIX)
-		?: bare
-	return DataDrivenMangaSource.PREFIX + canonicalDataSourceId(renamed)
+	val upgraded = upgradedStoredSourceName(storedSourceRef) ?: return null
+	return NyoraSourceIdentity.canonicalize(upgraded)
 }
 
 /**
@@ -47,29 +43,96 @@ internal fun pulledMangaIdAlias(remoteId: String, storedSourceRef: String, manga
 }
 
 /**
- * The remote id -> local id map a pull keys every dependent row through.
+ * What a pull knows about the remote manga rows before it applies any dependent row.
+ *
+ * @property aliases remote id -> local id, for the rows whose local id differs.
+ * @property sourceIds remote id -> canonical `data:` source, for every data-source row, aliased
+ * or not, so a dependent row can tell whether its chapter ids are ones this client hashes.
+ */
+internal class PulledMangaIdentities(
+	val aliases: Map<String, String>,
+	val sourceIds: Map<String, String>,
+)
+
+/**
+ * The remote id -> local id map a pull keys every dependent row through, and the source of each
+ * data-source row.
  *
  * Built from the complete remote parent set rather than the rows a cutoff selected: a foreign client
  * can update only a history, favourite, bookmark or category row, and that row still has to land
- * under the manga id this device holds. Rows that already carry their canonical id are left out, and
- * a row missing a column is reported and skipped so one malformed parent cannot cost the whole map.
+ * under the manga id this device holds. Rows that already carry their canonical id are left out of
+ * the alias map, and a row missing a column is reported and skipped so one malformed parent cannot
+ * cost the whole map.
  */
-internal fun pulledMangaIdAliasMap(
+internal fun pulledMangaIdentities(
 	rows: JSONArray,
 	onRowError: (Int, Throwable) -> Unit = { _, _ -> },
-): Map<String, String> {
+): PulledMangaIdentities {
 	val aliases = HashMap<String, String>()
+	val sourceIds = HashMap<String, String>()
 	for (index in 0 until rows.length()) {
 		try {
 			val row = rows.getJSONObject(index)
 			val remoteId = row.getString("id")
-			val localId = pulledMangaIdAlias(remoteId, row.getString("source_ref"), row.getString("url"))
-			if (localId != remoteId) aliases[remoteId] = localId
+			val sourceId = canonicalPulledSourceId(row.getString("source_ref"))
+			if (sourceId != null) {
+				sourceIds[remoteId] = sourceId
+				val localId = stableMangaId(sourceId.removePrefix(DataDrivenMangaSource.PREFIX), row.getString("url"))
+				if (localId != remoteId) aliases[remoteId] = localId
+			}
 		} catch (error: Exception) {
 			onRowError(index, error)
 		}
 	}
-	return aliases
+	return PulledMangaIdentities(aliases, sourceIds)
+}
+
+/** See [pulledMangaIdentities]; the alias half alone. */
+internal fun pulledMangaIdAliasMap(
+	rows: JSONArray,
+	onRowError: (Int, Throwable) -> Unit = { _, _ -> },
+): Map<String, String> = pulledMangaIdentities(rows, onRowError).aliases
+
+/**
+ * The chapter url a chapter id written by a shipped build carries, or null when [remoteChapterId]
+ * is not such an id.
+ *
+ * Every id this client and the other current clients write is the legacy hash, a signed 64-bit
+ * decimal. The v2.6 to v2.7.3 data-driven adapter stored the engine's id, which the engines set to
+ * the chapter href, and its native adapters stored `<source>|chapter|<url>`. A numeric id is left
+ * alone: it is either a hash already or an engine id no url can be recovered from.
+ */
+internal fun legacyChapterUrl(remoteChapterId: String): String? {
+	if (remoteChapterId.isBlank() || remoteChapterId.toLongOrNull() != null) return null
+	return remoteChapterId.substringAfter(NATIVE_CHAPTER_ID_DELIMITER, remoteChapterId).takeIf { it.isNotBlank() }
+}
+
+/**
+ * The local chapter id a pulled history or bookmark row settles on: [remoteChapterId] itself when
+ * it is already numeric or the manga is not a data source ([sourceId] null), the hash re-keyed from
+ * the url the shipped id carries when that url is one of the manga's [storedChapterUrls], and null
+ * when the row cannot be settled here and has to be stored as it came.
+ */
+internal fun pulledChapterIdAlias(
+	remoteChapterId: String,
+	sourceId: String?,
+	storedChapterUrls: () -> Collection<String>,
+): String? {
+	if (sourceId == null) return remoteChapterId
+	val url = legacyChapterUrl(remoteChapterId) ?: return remoteChapterId
+	if (url !in storedChapterUrls()) return null
+	return stableChapterId(sourceId.removePrefix(DataDrivenMangaSource.PREFIX), url)
+}
+
+/** The chapter urls of a stored `manga.chapters` blob; empty when the blob cannot be read. */
+internal fun storedChapterUrls(chaptersBlob: String): Set<String> {
+	val chapters = runCatching { JSONArray(chaptersBlob) }.getOrNull() ?: return emptySet()
+	val urls = LinkedHashSet<String>(chapters.length())
+	for (index in 0 until chapters.length()) {
+		val url = chapters.optJSONObject(index)?.optString("url").orEmpty()
+		if (url.isNotEmpty()) urls.add(url)
+	}
+	return urls
 }
 
 internal data class CanonicalAliasCandidate(

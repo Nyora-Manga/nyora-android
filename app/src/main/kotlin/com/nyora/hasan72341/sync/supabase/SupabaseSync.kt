@@ -43,6 +43,16 @@ class SupabaseSync @Inject constructor(
      */
     private val pulledMangaIdAliases = HashMap<String, String>()
 
+    /**
+     * Remote manga id -> canonical `data:` source of that manga, for the pull in progress; only
+     * data-source rows are listed. A history or bookmark row of such a manga whose chapter id is
+     * not a hash was written by a shipped build and is re-keyed before it is stored.
+     */
+    private val pulledMangaSourceIds = HashMap<String, String>()
+
+    /** Local manga id -> urls of its stored chapters, read at most once per pull. */
+    private val storedChapterUrlsByManga = HashMap<String, Set<String>>()
+
     private val JSON_MT = "application/json; charset=utf-8".toMediaType()
     private val syncFunctionUrl get() = "${config.url}/functions/v1/nyora-sync"
 
@@ -430,6 +440,8 @@ class SupabaseSync @Inject constructor(
 
     private suspend fun pullAll(cutoff: String) {
         pulledMangaIdAliases.clear()
+        pulledMangaSourceIds.clear()
+        storedChapterUrlsByManga.clear()
         pullMangaIdentities()
         pullCategories(cutoff)
         pullManga(cutoff)
@@ -511,7 +523,9 @@ class SupabaseSync @Inject constructor(
             for (i in 0 until arr.length()) {
                 try {
                     val row = arr.getJSONObject(i)
-                    val sourceId = NyoraSourceIdentity.canonicalize(row.getString("source_id")) ?: continue
+                    // Shipped builds pushed their DD_/JS_ spellings; the same upgrade the pull
+                    // applies to manga rows brings those prefs to the source they belong to.
+                    val sourceId = canonicalPulledSourceId(row.getString("source_id")) ?: continue
                     val isPinned = row.getBoolean("is_pinned")
                     val isEnabled = row.getBoolean("is_enabled")
                     dao.setEnabled(sourceId, isEnabled)
@@ -645,10 +659,11 @@ class SupabaseSync @Inject constructor(
      */
     private suspend fun pullMangaIdentities() {
         val text = fetch("nyora_manga?select=id,url,source_ref") ?: return
-        val aliases = pulledMangaIdAliasMap(JSONArray(text)) { index, error ->
+        val identities = pulledMangaIdentities(JSONArray(text)) { index, error ->
             android.util.Log.e("SupabaseSync", "pullMangaIdentities row $index failed", error)
         }
-        pulledMangaIdAliases.putAll(aliases)
+        pulledMangaIdAliases.putAll(identities.aliases)
+        pulledMangaSourceIds.putAll(identities.sourceIds)
     }
 
     private suspend fun pullManga(cutoff: String) {
@@ -749,7 +764,8 @@ class SupabaseSync @Inject constructor(
             val rows = newestCanonicalJsonRows(arr) { canonicalPulledMangaId(it.getString("manga_id")) }
             for (row in rows) {
                 try {
-                    val mangaId = canonicalPulledMangaId(row.getString("manga_id"))
+                    val remoteMangaId = row.getString("manga_id")
+                    val mangaId = canonicalPulledMangaId(remoteMangaId)
                     val deleted = !row.isNull("deleted_at")
                     if (deleted) {
                          historyDao.delete(mangaId)
@@ -759,7 +775,7 @@ class SupabaseSync @Inject constructor(
                                   mangaId = mangaId,
                                   createdAt = System.currentTimeMillis(),
                                   updatedAt = parseEpochMilli(row.getString("updated_at")),
-                                  chapterId = row.getString("chapter_id"),
+                                  chapterId = localChapterId("history", remoteMangaId, mangaId, row.getString("chapter_id")),
                                   page = row.getInt("page"),
                                   scroll = row.optDouble("scroll", 0.0).toFloat(),
                                   percent = row.getDouble("percent").toFloat(),
@@ -787,8 +803,9 @@ class SupabaseSync @Inject constructor(
             }
             for (row in rows) {
                 try {
-                    val mangaId = canonicalPulledMangaId(row.getString("manga_id"))
-                    val chapterId = row.getString("chapter_id")
+                    val remoteMangaId = row.getString("manga_id")
+                    val mangaId = canonicalPulledMangaId(remoteMangaId)
+                    val chapterId = localChapterId("bookmark", remoteMangaId, mangaId, row.getString("chapter_id"))
                     val page = row.getInt("page")
                     if (!row.isNull("deleted_at")) {
                         bookmarksDao.delete(mangaId, chapterId, page)
@@ -879,6 +896,28 @@ class SupabaseSync @Inject constructor(
     private fun now(): String = Instant.now().toString()
 
     private fun canonicalPulledMangaId(remoteId: String): String = pulledMangaIdAliases[remoteId] ?: remoteId
+
+    /**
+     * The chapter id a pulled history or bookmark row is stored under. A data-source row whose
+     * chapter id is not a hash came from a shipped build; it is re-keyed from the chapter url that
+     * id carries when the manga's stored chapters know that url, and otherwise stored as it came,
+     * which the log records because the reader cannot resume from it.
+     */
+    private suspend fun localChapterId(table: String, remoteMangaId: String, mangaId: String, remoteChapterId: String): String {
+        val sourceId = pulledMangaSourceIds[remoteMangaId]
+        // Only a shipped-build id of a data-source manga needs the stored chapters read.
+        val storedUrls = if (sourceId != null && legacyChapterUrl(remoteChapterId) != null) storedChapterUrlsOf(mangaId) else emptySet()
+        val resolved = pulledChapterIdAlias(remoteChapterId, sourceId) { storedUrls }
+        if (resolved == null) {
+            android.util.Log.w("SupabaseSync", "pull $table: chapter id $remoteChapterId of manga $mangaId kept as pushed; no stored chapter carries its url")
+        }
+        return resolved ?: remoteChapterId
+    }
+
+    private suspend fun storedChapterUrlsOf(mangaId: String): Set<String> =
+        storedChapterUrlsByManga.getOrPut(mangaId) {
+            storedChapterUrls(mangaDao.find(mangaId)?.chapters.orEmpty())
+        }
 
     /**
      * The rows to apply, with an aliased and an already-canonical row of the same manga collapsed
