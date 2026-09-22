@@ -211,6 +211,12 @@ git submodule update --init --recursive   # the data-driven source catalogue
 ./gradlew assembleRelease   # or open in Android Studio and Run ▸ app
 ```
 
+`data` is a submodule: it tracks branch `android-sources-2026-09-20` of
+[nyora-data-driven](https://github.com/nyora-manga/nyora-data-driven), pinned to the commit this
+revision was built against, and carries the source catalogue and engines the `:engine` module
+compiles. If you already keep a checkout of it elsewhere, build against that instead of the
+submodule with `./gradlew -Pnyora.dataDrivenDir=/path/to/nyora-data-driven/data`.
+
 The release APK is produced under the app module's build outputs. You can also open the project in Android Studio and use **Run ▸ app** to build and deploy a debug build to a connected device or emulator.
 
 > Good news for contributors: the Android app builds from this public repo with no private dependencies — the 1100+ sources are pulled in as a published parsers library, so you can clone, build and run today. See [Development Setup](#development-setup) for the contributor-oriented quickstart.
