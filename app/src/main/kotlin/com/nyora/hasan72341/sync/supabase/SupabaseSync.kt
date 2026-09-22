@@ -32,7 +32,16 @@ class SupabaseSync @Inject constructor(
     private val mangaDao get() = database.getMangaDao()
     private val categoriesDao get() = database.getFavouriteCategoriesDao()
     private val preferencesDao get() = database.getPreferencesDao()
-    
+
+    /**
+     * Remote manga id -> the local id that row hashes to, for the pull in progress.
+     *
+     * Older clients wrote a server-generated id for a data-catalogue manga, so the same manga can
+     * exist in the cloud under both that id and the canonical one. [pullManga] fills this map and
+     * every dependent pull resolves its `manga_id` through it; [pullAll] clears it first.
+     */
+    private val pulledMangaIdAliases = HashMap<String, String>()
+
     private val JSON_MT = "application/json; charset=utf-8".toMediaType()
     private val syncFunctionUrl get() = "${config.url}/functions/v1/nyora-sync"
 
@@ -419,6 +428,7 @@ class SupabaseSync @Inject constructor(
     }
 
     private suspend fun pullAll(cutoff: String) {
+        pulledMangaIdAliases.clear()
         pullCategories(cutoff)
         pullManga(cutoff)
         pullMangaCategories(cutoff)
@@ -551,13 +561,15 @@ class SupabaseSync @Inject constructor(
     }
 
     private suspend fun pullMangaCategories(cutoff: String) {
-        val text = fetch("nyora_manga_category?select=manga_id,category_id,deleted_at", cutoff) ?: return
+        val text = fetch("nyora_manga_category?select=manga_id,category_id,updated_at,deleted_at", cutoff) ?: return
         runCatching {
             val arr = JSONArray(text)
-            for (i in 0 until arr.length()) {
+            val rows = newestCanonicalJsonRows(arr) {
+                "${canonicalPulledMangaId(it.getString("manga_id"))}|${it.getString("category_id")}"
+            }
+            for (row in rows) {
                 try {
-                    val row = arr.getJSONObject(i)
-                    val mangaId = row.getString("manga_id")
+                    val mangaId = canonicalPulledMangaId(row.getString("manga_id"))
                     val categoryIdStr = row.getString("category_id")
                     val categoryId = categoryIdStr.toLongOrNull() ?: continue
                     val deleted = !row.isNull("deleted_at")
@@ -586,14 +598,14 @@ class SupabaseSync @Inject constructor(
     }
 
     private suspend fun pullMangaPrefs(cutoff: String) {
-        val text = fetch("nyora_manga_prefs?select=manga_id,reader_mode,brightness,contrast", cutoff) ?: return
+        val text = fetch("nyora_manga_prefs?select=manga_id,reader_mode,brightness,contrast,updated_at", cutoff) ?: return
         runCatching {
             val arr = JSONArray(text)
             val dao = database.getPreferencesDao()
-            for (i in 0 until arr.length()) {
+            val rows = newestCanonicalJsonRows(arr) { canonicalPulledMangaId(it.getString("manga_id")) }
+            for (row in rows) {
                 try {
-                    val row = arr.getJSONObject(i)
-                    val mangaId = row.getString("manga_id")
+                    val mangaId = canonicalPulledMangaId(row.getString("manga_id"))
                     val readerModeStr = row.optString("reader_mode", "0")
                     val mode = readerModeStr.toIntOrNull() ?: 0
                     val brightness = row.optDouble("brightness", 0.0).toFloat()
@@ -621,13 +633,24 @@ class SupabaseSync @Inject constructor(
     }
 
     private suspend fun pullManga(cutoff: String) {
-        val text = fetch("nyora_manga?select=id,title,alt_titles,url,public_url,rating,is_nsfw,content_rating,cover_url,large_cover_url,state,authors,source_ref,description,tags", cutoff) ?: return
+        val text = fetch("nyora_manga?select=id,title,alt_titles,url,public_url,rating,is_nsfw,content_rating,cover_url,large_cover_url,state,authors,source_ref,description,tags,updated_at", cutoff) ?: return
         runCatching {
             val arr = JSONArray(text)
+            // Alias every row before a winner is chosen, or the key a duplicate collapses on would
+            // depend on which of the two backend rows happened to arrive first.
             for (i in 0 until arr.length()) {
                 try {
                     val row = arr.getJSONObject(i)
-                    val mangaId = row.getString("id")
+                    val remoteId = row.getString("id")
+                    val localId = pulledMangaIdAlias(remoteId, row.getString("source_ref"), row.getString("url"))
+                    if (localId != remoteId) pulledMangaIdAliases[remoteId] = localId
+                } catch (e: Exception) {
+                    android.util.Log.e("SupabaseSync", "pullManga alias row failed", e)
+                }
+            }
+            for (row in newestCanonicalJsonRows(arr) { canonicalPulledMangaId(it.getString("id")) }) {
+                try {
+                    val mangaId = canonicalPulledMangaId(row.getString("id"))
                     val title = row.getString("title")
                     val altTitles = if (row.isNull("alt_titles")) null else row.getString("alt_titles")
                     val url = row.getString("url")
@@ -639,7 +662,11 @@ class SupabaseSync @Inject constructor(
                     val largeCoverUrl = if (row.isNull("large_cover_url")) null else row.getString("large_cover_url")
                     val state = if (row.isNull("state")) null else row.getString("state")
                     val authors = if (row.isNull("authors")) null else row.getString("authors")
-                    val source = row.getString("source_ref")
+                    // The id above is hashed from the canonical source, so the row has to be stored
+                    // under that source too or the manga resolves to a retired, unopenable identity.
+                    val source = canonicalPulledSourceId(row.getString("source_ref"))
+                        ?.let { JSONObject().put("name", it).toString() }
+                        ?: row.getString("source_ref")
                     val description = row.optString("description", "")
                     val tags = row.optString("tags", "[]")
                     
@@ -668,15 +695,15 @@ class SupabaseSync @Inject constructor(
     }
 
     private suspend fun pullFavourites(cutoff: String) {
-        val text = fetch("nyora_favourite?select=manga_id,deleted_at", cutoff) ?: return
+        val text = fetch("nyora_favourite?select=manga_id,updated_at,deleted_at", cutoff) ?: return
         runCatching {
             val arr = JSONArray(text)
             val categories = categoriesDao.findAll()
             val defaultCategoryId = categories.firstOrNull()?.categoryId?.toLong() ?: 1L
-            for (i in 0 until arr.length()) {
+            val rows = newestCanonicalJsonRows(arr) { canonicalPulledMangaId(it.getString("manga_id")) }
+            for (row in rows) {
                 try {
-                    val row = arr.getJSONObject(i)
-                    val mangaId = row.getString("manga_id")
+                    val mangaId = canonicalPulledMangaId(row.getString("manga_id"))
                     val deleted = !row.isNull("deleted_at")
                     if (deleted) {
                         favouritesDao.delete(mangaId)
@@ -710,10 +737,10 @@ class SupabaseSync @Inject constructor(
         val text = fetch("nyora_history?select=manga_id,source_id,chapter_id,chapter_title,page,scroll,percent,chapters_count,updated_at,deleted_at", cutoff) ?: return
         runCatching {
             val arr = JSONArray(text)
-            for (i in 0 until arr.length()) {
+            val rows = newestCanonicalJsonRows(arr) { canonicalPulledMangaId(it.getString("manga_id")) }
+            for (row in rows) {
                 try {
-                    val row = arr.getJSONObject(i)
-                    val mangaId = row.getString("manga_id")
+                    val mangaId = canonicalPulledMangaId(row.getString("manga_id"))
                     val deleted = !row.isNull("deleted_at")
                     if (deleted) {
                          historyDao.delete(mangaId)
@@ -746,10 +773,12 @@ class SupabaseSync @Inject constructor(
         runCatching {
             val arr = JSONArray(text)
             val toUpsert = mutableListOf<com.nyora.hasan72341.bookmarks.data.BookmarkEntity>()
-            for (i in 0 until arr.length()) {
+            val rows = newestCanonicalJsonRows(arr) {
+                "${canonicalPulledMangaId(it.getString("manga_id"))}|${it.getString("chapter_id")}|${it.getInt("page")}"
+            }
+            for (row in rows) {
                 try {
-                    val row = arr.getJSONObject(i)
-                    val mangaId = row.getString("manga_id")
+                    val mangaId = canonicalPulledMangaId(row.getString("manga_id"))
                     val chapterId = row.getString("chapter_id")
                     val page = row.getInt("page")
                     if (!row.isNull("deleted_at")) {
@@ -839,6 +868,43 @@ class SupabaseSync @Inject constructor(
     }
 
     private fun now(): String = Instant.now().toString()
+
+    private fun canonicalPulledMangaId(remoteId: String): String = pulledMangaIdAliases[remoteId] ?: remoteId
+
+    /**
+     * The rows to apply, with an aliased and an already-canonical row of the same manga collapsed
+     * onto the newest of the two. Backend row order is not a conflict policy.
+     */
+    private fun newestCanonicalJsonRows(rows: JSONArray, key: (JSONObject) -> String): List<JSONObject> {
+        val winners = linkedMapOf<String, JSONObject>()
+        for (index in 0 until rows.length()) {
+            val candidate = rows.optJSONObject(index) ?: continue
+            // A row missing the columns the key is built from is still handed to the caller, which
+            // logs and skips it per row. Collapsing must never cost more rows than it deduplicates.
+            val canonicalKey = runCatching { key(candidate) }.getOrElse { "\u0000malformed:$index" }
+            val current = winners[canonicalKey]
+            if (current == null || isNewerRemoteRow(candidate, current)) winners[canonicalKey] = candidate
+        }
+        return winners.values.toList()
+    }
+
+    private fun isNewerRemoteRow(candidate: JSONObject, incumbent: JSONObject): Boolean {
+        val left = aliasCandidate(candidate)
+        val right = aliasCandidate(incumbent)
+        return left != right && newestCanonicalAlias(listOf(left, right)) == left
+    }
+
+    private fun aliasCandidate(row: JSONObject): CanonicalAliasCandidate {
+        val remoteId = row.optString("manga_id", "").ifBlank { row.optString("id", "") }
+        return CanonicalAliasCandidate(
+            remoteId = remoteId,
+            canonicalId = canonicalPulledMangaId(remoteId),
+            updatedAt = parseEpochMilliOrZero(row.optString("updated_at", "")),
+            deletedAt = parseEpochMilliOrZero(row.optString("deleted_at", "")),
+        )
+    }
+
+    private fun parseEpochMilliOrZero(text: String): Long = runCatching { parseEpochMilli(text) }.getOrDefault(0L)
 
     private fun parseEpochMilli(text: String): Long {
         return runCatching { Instant.parse(text).toEpochMilli() }

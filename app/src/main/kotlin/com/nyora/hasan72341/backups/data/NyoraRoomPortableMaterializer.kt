@@ -4,6 +4,8 @@ import com.nyora.hasan72341.bookmarks.data.BookmarkEntity
 import com.nyora.hasan72341.core.db.MangaDatabase
 import com.nyora.hasan72341.core.db.entity.MangaSourceEntity
 import com.nyora.hasan72341.core.db.entity.toEntity
+import com.nyora.hasan72341.core.model.DataDrivenMangaSource
+import com.nyora.hasan72341.core.parser.datadriven.stableMangaId
 import com.nyora.hasan72341.favourites.data.FavouriteCategoryEntity
 import com.nyora.hasan72341.favourites.data.FavouriteEntity
 import com.nyora.hasan72341.favourites.data.NYORA_UNCATEGORIZED_PORTABLE_ID
@@ -21,6 +23,7 @@ class NyoraRoomPortableMaterializer(
 	override suspend fun replace(snapshot: NyoraBackupSnapshot) {
 		val sql = database.openHelper.writableDatabase
 		val now = System.currentTimeMillis()
+		val identityMap = database.getNyoraBackupIdentityMapDao()
 		val previouslyManagedCategoryIds = mappedNumericLocalIds("category")
 		sql.execSQL("DELETE FROM sources WHERE source LIKE 'data:%' OR source LIKE 'JS_%' OR source LIKE 'MIHON_%' OR source LIKE 'mihon:%' OR source GLOB '[0-9]*'")
 		snapshot.sources.filter { it.deletedAt == null }.forEachIndexed { index, source ->
@@ -29,8 +32,15 @@ class NyoraRoomPortableMaterializer(
 			)
 		}
 		val chaptersByManga = snapshot.chapters.filter { it.deletedAt == null }.groupBy { it.mangaId }
-		snapshot.manga.forEach { item ->
-			database.getNyoraBackupIdentityMapDao().recordLocalKey("manga", item.id, item.id)
+		// A portable id is a SHA-256 of (source, content key); a local row keeps the legacy 64-bit hash the
+		// runtime, the migrations and the sync wire all key by. Every portable reference below is resolved
+		// through this map, and a mapping the projector already recorded wins so a row the device holds
+		// under some other id is updated in place instead of duplicated.
+		val localMangaIds = snapshot.manga.associate { item ->
+			val localId = identityMap.findLocalKey("manga", item.id)
+				?: stableMangaId(item.sourceId.removePrefix(DataDrivenMangaSource.PREFIX), item.contentKey)
+			identityMap.recordLocalKeyIfAbsent("manga", item.id, localId)
+			item.id to localId
 		}
 		// Manga owns device-only children (downloads, statistics and reader preferences). Never delete it here:
 		// an absent portable row is excluded from the ledger/library while its local Room graph remains intact.
@@ -47,7 +57,7 @@ class NyoraRoomPortableMaterializer(
 			}
 			database.getMangaDao().upsert(
 				Manga(
-					id = item.id,
+					id = localMangaIds.getValue(item.id),
 					title = item.title,
 					url = item.contentKey,
 					publicUrl = item.contentKey,
@@ -64,7 +74,7 @@ class NyoraRoomPortableMaterializer(
 		deleteManagedRows("favourites")
 		val targetCategoryIds = linkedSetOf<Int>()
 		val categoryIds = snapshot.categories.filter { it.deletedAt == null }.associate { category ->
-			val localId = database.getNyoraBackupIdentityMapDao().resolveLocalId("category", category.id)
+			val localId = identityMap.resolveLocalId("category", category.id)
 			targetCategoryIds += localId
 			database.getFavouriteCategoriesDao().upsert(
 				FavouriteCategoryEntity(
@@ -82,7 +92,7 @@ class NyoraRoomPortableMaterializer(
 		}
 		val uncategorized = snapshot.library.any { it.deletedAt == null && it.categoryIds.isEmpty() }
 		val uncategorizedId = if (uncategorized) {
-			database.getNyoraBackupIdentityMapDao().resolveLocalId("category", NYORA_UNCATEGORIZED_PORTABLE_ID).also { localId ->
+			identityMap.resolveLocalId("category", NYORA_UNCATEGORIZED_PORTABLE_ID).also { localId ->
 				targetCategoryIds += localId
 				database.getFavouriteCategoriesDao().upsert(
 					FavouriteCategoryEntity(
@@ -104,10 +114,11 @@ class NyoraRoomPortableMaterializer(
 			}
 		}
 		snapshot.library.filter { it.deletedAt == null }.forEach { item ->
+			val localMangaId = localMangaIds[item.mangaId] ?: return@forEach
 			val localCategories = item.categoryIds.mapNotNull(categoryIds::get).ifEmpty { listOfNotNull(uncategorizedId) }
 			localCategories.forEachIndexed { index, categoryId ->
 				database.getFavouritesDao().upsert(
-					FavouriteEntity(item.mangaId, categoryId, index, false, millis(item.addedAt), 0L),
+					FavouriteEntity(localMangaId, categoryId, index, false, millis(item.addedAt), 0L),
 				)
 			}
 		}
@@ -117,8 +128,9 @@ class NyoraRoomPortableMaterializer(
 			arrayOf(now),
 		)
 		snapshot.history.forEach { item ->
+			val localMangaId = localMangaIds[item.mangaId] ?: return@forEach
 			val values = arrayOf<Any?>(
-				item.mangaId,
+				localMangaId,
 				millis(item.updatedAt),
 				millis(item.updatedAt),
 				item.chapterId.orEmpty(),
@@ -139,10 +151,11 @@ class NyoraRoomPortableMaterializer(
 		}
 		deleteManagedRows("bookmarks")
 		database.getBookmarksDao().upsert(
-			snapshot.bookmarks.filter { it.deletedAt == null }.map { item ->
-				database.getNyoraBackupIdentityMapDao().recordLocalKey("bookmark", item.id, "${item.mangaId}\u0000${item.id}")
+			snapshot.bookmarks.filter { it.deletedAt == null }.mapNotNull { item ->
+				val localMangaId = localMangaIds[item.mangaId] ?: return@mapNotNull null
+				identityMap.recordLocalKey("bookmark", item.id, "$localMangaId\u0000${item.id}")
 				BookmarkEntity(
-					mangaId = item.mangaId,
+					mangaId = localMangaId,
 					pageId = item.id,
 					chapterId = item.chapterId.orEmpty(),
 					page = item.page ?: 0,
@@ -157,12 +170,13 @@ class NyoraRoomPortableMaterializer(
 		deleteManagedRows("scrobblings")
 		snapshot.tracking.filter { it.deletedAt == null }.forEach { item ->
 			val service = ScrobblerService.entries.firstOrNull { it.name.equals(item.service, true) } ?: return@forEach
-			val localId = database.getNyoraBackupIdentityMapDao().resolveLocalId("tracking:${item.service.lowercase()}", item.id)
+			val localMangaId = localMangaIds[item.mangaId] ?: return@forEach
+			val localId = identityMap.resolveLocalId("tracking:${item.service.lowercase()}", item.id)
 			database.getScrobblingDao().upsert(
 				ScrobblingEntity(
 					scrobbler = service.id,
 					id = localId,
-					mangaId = item.mangaId,
+					mangaId = localMangaId,
 					targetId = localId.toLong(),
 					status = item.status,
 					chapter = item.progress?.toInt() ?: 0,

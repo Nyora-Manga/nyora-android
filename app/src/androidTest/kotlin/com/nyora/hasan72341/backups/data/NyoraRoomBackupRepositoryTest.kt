@@ -16,6 +16,7 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import com.nyora.hasan72341.core.db.MangaDatabase
+import com.nyora.hasan72341.core.parser.datadriven.stableMangaId
 import com.nyora.hasan72341.list.domain.ListSortOrder
 
 @RunWith(AndroidJUnit4::class)
@@ -208,6 +209,8 @@ class NyoraRoomBackupRepositoryTest {
 		val earlierCategory = "00000000-0000-0000-0000-000000000001"
 		val mangaOne = NyoraBackupIdentity.mangaId(SOURCE_ID, "/one")
 		val mangaTwo = NyoraBackupIdentity.mangaId(SOURCE_ID, "/two")
+		val localMangaOne = localMangaId("/one")
+		val localMangaTwo = localMangaId("/two")
 		val shaTrackingId = "anilist:sha256:9c1185a5c5e9fc54612808977ee8f548b2258d31"
 		val timestamp = "2026-08-21T00:00:00.000Z"
 		val incoming = NyoraBackupSnapshot(
@@ -240,16 +243,29 @@ class NyoraRoomBackupRepositoryTest {
 		assertEquals(emptyList<String>(), projected.library.single { it.mangaId == mangaTwo }.categoryIds)
 		assertTrue(projected.categories.any { it.id == earlierCategory && it.title == "__nyora_uncategorized__" })
 		assertEquals(shaTrackingId, projected.tracking.single().id)
-		assertEquals(2, database.getFavouritesDao().findAllForBackup().size)
+		// Manga rows and everything keyed by one keep the legacy local identity, not the portable id.
+		assertEquals(
+			setOf(localMangaOne, localMangaTwo),
+			database.getMangaDao().findAllForBackup().map { it.id }.toSet(),
+		)
+		listOf(mangaOne to localMangaOne, mangaTwo to localMangaTwo).forEach { (portableId, localId) ->
+			assertEquals(localId, database.getNyoraBackupIdentityMapDao().findLocalKey("manga", portableId))
+		}
+		assertEquals(localMangaOne, database.getScrobblingDao().findAllForBackup().single().mangaId)
+		assertEquals(
+			// The categorized manga is in two categories; the other one is in the uncategorized sentinel.
+			listOf(localMangaOne, localMangaOne, localMangaTwo).sorted(),
+			database.getFavouritesDao().findAllForBackup().map { it.mangaId }.sorted(),
+		)
 		assertEquals(1, database.getScrobblingDao().findAllForBackup().size)
 		assertEquals(2, database.getFavouriteCategoriesDao().findAll().size)
 		assertEquals(2, database.getFavouriteCategoriesDao().findAllForSync().size)
-		assertTrue(database.getFavouritesDao().findAll().any { it.manga.id == mangaTwo })
-		assertTrue(database.getFavouritesDao().findAllForSync().none { it.manga.id == mangaTwo })
-		assertTrue(database.getFavouritesDao().observeCategories(mangaTwo).first().isEmpty())
+		assertTrue(database.getFavouritesDao().findAll().any { it.manga.id == localMangaTwo })
+		assertTrue(database.getFavouritesDao().findAllForSync().none { it.manga.id == localMangaTwo })
+		assertTrue(database.getFavouritesDao().observeCategories(localMangaTwo).first().isEmpty())
 		assertTrue(
 			database.getFavouritesDao().observeAll(ListSortOrder.UPDATED, emptySet(), 10).first()
-				.any { it.manga.id == mangaTwo },
+				.any { it.manga.id == localMangaTwo },
 		)
 		database.openHelper.readableDatabase.query(
 			"SELECT COUNT(*) FROM favourite_categories WHERE title = '__nyora_uncategorized__'",
@@ -330,6 +346,7 @@ class NyoraRoomBackupRepositoryTest {
 		)
 		val timestamp = "2026-08-21T00:00:00.000Z"
 		val mangaId = NyoraBackupIdentity.mangaId(SOURCE_ID, "/old")
+		val localId = localMangaId("/old")
 		val populated = NyoraBackupSnapshot(
 			archiveId = "55555555-5555-5555-5555-555555555555",
 			createdAt = timestamp,
@@ -340,15 +357,16 @@ class NyoraRoomBackupRepositoryTest {
 			library = listOf(NyoraBackupLibrary(mangaId, timestamp, emptyList())),
 		)
 		repository.apply(NyoraBackupCodec.encode(populated), NyoraRestoreMode.Replace)
-		assertEquals(1, database.getMangaDao().findAllForBackup().size)
+		assertEquals(listOf(localId), database.getMangaDao().findAllForBackup().map { it.id })
 		val sql = database.openHelper.writableDatabase
-		sql.execSQL("INSERT INTO local_index (manga_id, path) VALUES (?, ?)", arrayOf(mangaId, "/download"))
-		sql.execSQL("INSERT INTO preferences (manga_id, mode, cf_brightness, cf_contrast, cf_invert, cf_grayscale, cf_book, cf_multitone, title_override, cover_override, content_rating_override) VALUES (?, 1, 1, 1, 0, 0, 0, 0, NULL, NULL, NULL)", arrayOf(mangaId))
-		sql.execSQL("INSERT INTO history (manga_id, created_at, updated_at, chapter_id, page, scroll, percent, deleted_at, chapters) VALUES (?, 1, 1, '', 0, 0, 0, 0, 0)", arrayOf(mangaId))
-		sql.execSQL("INSERT INTO stats (manga_id, started_at, duration, pages) VALUES (?, 1, 2, 3)", arrayOf(mangaId))
+		sql.execSQL("INSERT INTO local_index (manga_id, path) VALUES (?, ?)", arrayOf(localId, "/download"))
+		sql.execSQL("INSERT INTO preferences (manga_id, mode, cf_brightness, cf_contrast, cf_invert, cf_grayscale, cf_book, cf_multitone, title_override, cover_override, content_rating_override) VALUES (?, 1, 1, 1, 0, 0, 0, 0, NULL, NULL, NULL)", arrayOf(localId))
+		sql.execSQL("INSERT INTO history (manga_id, created_at, updated_at, chapter_id, page, scroll, percent, deleted_at, chapters) VALUES (?, 1, 1, '', 0, 0, 0, 0, 0)", arrayOf(localId))
+		sql.execSQL("INSERT INTO stats (manga_id, started_at, duration, pages) VALUES (?, 1, 2, 3)", arrayOf(localId))
 		val empty = populated.copy(
 			archiveId = "77777777-7777-7777-7777-777777777777",
 			manga = emptyList(),
+			library = emptyList(),
 		)
 
 		repository.apply(NyoraBackupCodec.encode(empty), NyoraRestoreMode.Replace)
@@ -357,7 +375,7 @@ class NyoraRoomBackupRepositoryTest {
 		assertTrue(database.getFavouritesDao().findAllForBackup().isEmpty())
 		assertEquals(1, database.getMangaDao().findAllForBackup().size)
 		listOf("local_index", "preferences", "stats").forEach { table ->
-			sql.query("SELECT COUNT(*) FROM $table WHERE manga_id = ?", arrayOf(mangaId)).use { cursor ->
+			sql.query("SELECT COUNT(*) FROM $table WHERE manga_id = ?", arrayOf(localId)).use { cursor ->
 				assertTrue(cursor.moveToFirst())
 				assertEquals("$table must survive portable replacement", 1, cursor.getInt(0))
 			}
@@ -379,6 +397,7 @@ class NyoraRoomBackupRepositoryTest {
 		)
 		val timestamp = "2026-08-21T00:00:00.000Z"
 		val mangaId = NyoraBackupIdentity.mangaId(SOURCE_ID, "/history")
+		val localId = localMangaId("/history")
 		val snapshot = NyoraBackupSnapshot(
 			archiveId = "88888888-8888-8888-8888-888888888888",
 			createdAt = timestamp,
@@ -390,11 +409,12 @@ class NyoraRoomBackupRepositoryTest {
 		)
 		repository.apply(NyoraBackupCodec.encode(snapshot), NyoraRestoreMode.Replace)
 		val sql = database.openHelper.writableDatabase
-		sql.execSQL("INSERT INTO stats (manga_id, started_at, duration, pages) VALUES (?, 1, 2, 3)", arrayOf(mangaId))
+		sql.execSQL("INSERT INTO stats (manga_id, started_at, duration, pages) VALUES (?, 1, 2, 3)", arrayOf(localId))
 
 		repository.apply(NyoraBackupCodec.encode(snapshot), NyoraRestoreMode.Replace)
 
-		sql.query("SELECT duration, pages FROM stats WHERE manga_id = ?", arrayOf(mangaId)).use { cursor ->
+		assertEquals(listOf(localId), database.getHistoryDao().findAllForBackup().map { it.mangaId })
+		sql.query("SELECT duration, pages FROM stats WHERE manga_id = ?", arrayOf(localId)).use { cursor ->
 			assertTrue(cursor.moveToFirst())
 			assertEquals(2L, cursor.getLong(0))
 			assertEquals(3, cursor.getInt(1))
@@ -486,6 +506,10 @@ class NyoraRoomBackupRepositoryTest {
 			})
 		}
 	}
+
+	/** The legacy Room identity a portable row of [SOURCE_ID] with this content key restores under. */
+	private fun localMangaId(contentKey: String): String =
+		stableMangaId(SOURCE_ID.removePrefix("data:"), contentKey)
 
 	private fun database(name: String): MangaDatabase = Room.databaseBuilder(context, MangaDatabase::class.java, name)
 		.allowMainThreadQueries()

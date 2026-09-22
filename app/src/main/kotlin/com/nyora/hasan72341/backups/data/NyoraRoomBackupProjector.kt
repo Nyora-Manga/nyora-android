@@ -24,12 +24,18 @@ class NyoraRoomBackupProjector(
 			val sourceId = NyoraSourceIdentity.canonicalize(storedSourceName(row.source)) ?: return@mapNotNull null
 			row.id to MangaProjection(row, sourceId, NyoraBackupIdentity.mangaId(sourceId, row.url))
 		}.toMap()
+		val identityMap = database.getNyoraBackupIdentityMapDao()
+		// Export derives the portable id from the local row, restore derives the local id from the portable
+		// row, and the two only agree for a row whose local id already is the legacy hash. Recording the pair
+		// here lets a later restore find the row this device actually holds instead of adding a second one.
+		canonicalByLocalId.forEach { (localId, projection) ->
+			identityMap.recordLocalKeyIfAbsent("manga", projection.portableId, localId)
+		}
 		val sourceRows = database.getSourcesDao().findAll()
 		val sourceIds = (sourceRows.mapNotNull { NyoraSourceIdentity.canonicalize(it.source) } +
 			canonicalByLocalId.values.map { it.sourceId }).toSortedSet()
 		val categoryRows = database.getFavouriteCategoriesDao().findAllForSync()
 		val favourites = database.getFavouritesDao().findAllForBackup()
-		val identityMap = database.getNyoraBackupIdentityMapDao()
 		val favouritesByCategory = favourites.groupBy { it.categoryId }
 		val categoryProjections = categoryRows.filter { row ->
 			val references = favouritesByCategory[row.categoryId.toLong()].orEmpty()

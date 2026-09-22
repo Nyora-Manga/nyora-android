@@ -55,7 +55,7 @@ android {
 		versionCode project.hasProperty('versionCode') ? project.property('versionCode').toInteger() : 10000
         versionName project.hasProperty('versionName') ? project.property('versionName') : '1.0'
         generatedDensities = []
-		testInstrumentationRunner 'com.nyora.android.HiltTestRunner'
+		testInstrumentationRunner 'com.nyora.hasan72341.HiltTestRunner'
 		buildConfigField "String", "SUPABASE_URL", "\"${supabaseEnv('SUPABASE_URL')}\""
 		buildConfigField "String", "SUPABASE_ANON_KEY", "\"${supabaseEnv('SUPABASE_ANON_KEY')}\""
 		ksp {

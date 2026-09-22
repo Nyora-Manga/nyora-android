@@ -71,6 +71,9 @@ abstract class NyoraBackupIdentityMapDao {
 	@Insert(onConflict = OnConflictStrategy.ABORT)
 	abstract suspend fun insert(entity: NyoraBackupIdentityMapEntity)
 
+	@Insert(onConflict = OnConflictStrategy.IGNORE)
+	protected abstract suspend fun insertIfAbsent(entity: NyoraBackupIdentityMapEntity)
+
 	@androidx.room.Transaction
 	open suspend fun resolveLocalId(kind: String, portableId: String): Int {
 		findLocalKey(kind, portableId)?.toIntOrNull()?.let { return it }
@@ -85,4 +88,14 @@ abstract class NyoraBackupIdentityMapDao {
 		if (existing == null) insert(NyoraBackupIdentityMapEntity(kind, portableId, localKey))
 		else require(existing == localKey) { "Portable identity is already mapped" }
 	}
+
+	/**
+	 * Records a mapping and keeps the one that got there first.
+	 *
+	 * Manga ids are derived rather than allocated, and two retired spellings of one source hash to
+	 * the same local row, so a taken local key is a legitimate collision here rather than the
+	 * programming error [recordLocalKey] reports.
+	 */
+	open suspend fun recordLocalKeyIfAbsent(kind: String, portableId: String, localKey: String) =
+		insertIfAbsent(NyoraBackupIdentityMapEntity(kind, portableId, localKey))
 }
