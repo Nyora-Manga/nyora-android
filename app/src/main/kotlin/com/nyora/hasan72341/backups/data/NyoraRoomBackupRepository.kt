@@ -35,6 +35,10 @@ class NyoraRoomBackupRepository(
 	private val observerGate: NyoraBackupObserverGate = NyoraBackupObserverGate.None,
 	private val now: () -> Instant = Instant::now,
 	private val newArchiveId: () -> UUID = UUID::randomUUID,
+	// Durably pairs the local rows with the portable ids they export under. Reading a snapshot and
+	// previewing a restore must not write, so this runs only inside the two write transactions below,
+	// where a failure rolls it back with everything else.
+	private val persistIdentities: suspend () -> Unit = {},
 ) {
 
 	suspend fun readSnapshot(): NyoraBackupSnapshot = database.getNyoraBackupLedgerDao().get()?.let {
@@ -42,6 +46,7 @@ class NyoraRoomBackupRepository(
 	} ?: initialSnapshot()
 
 	suspend fun exportBytes(): ByteArray = database.withTransaction {
+		persistIdentities()
 		val live = initialSnapshot()
 		val existing = database.getNyoraBackupLedgerDao().get()
 		if (existing == null) {
@@ -80,6 +85,7 @@ class NyoraRoomBackupRepository(
 		observerGate.setSuppressed(true)
 		try {
 			database.withTransaction {
+				persistIdentities()
 				val plan = planAgainstCurrent(incoming, mode)
 				materializer.replace(plan.preview)
 				val baseline = NyoraBackupCodec.encode(initialSnapshot())

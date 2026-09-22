@@ -37,8 +37,9 @@ class SupabaseSync @Inject constructor(
      * Remote manga id -> the local id that row hashes to, for the pull in progress.
      *
      * Older clients wrote a server-generated id for a data-catalogue manga, so the same manga can
-     * exist in the cloud under both that id and the canonical one. [pullManga] fills this map and
-     * every dependent pull resolves its `manga_id` through it; [pullAll] clears it first.
+     * exist in the cloud under both that id and the canonical one. [pullMangaIdentities] fills this
+     * map from the whole remote parent set and every dependent pull resolves its `manga_id` through
+     * it; [pullAll] clears it first.
      */
     private val pulledMangaIdAliases = HashMap<String, String>()
 
@@ -429,6 +430,7 @@ class SupabaseSync @Inject constructor(
 
     private suspend fun pullAll(cutoff: String) {
         pulledMangaIdAliases.clear()
+        pullMangaIdentities()
         pullCategories(cutoff)
         pullManga(cutoff)
         pullMangaCategories(cutoff)
@@ -632,22 +634,29 @@ class SupabaseSync @Inject constructor(
         }.onFailure { android.util.Log.e("SupabaseSync", "pullMangaPrefs failed", it) }
     }
 
+    /**
+     * Maps every remote manga id to the local id this device keys by, before anything is pulled.
+     *
+     * Deliberately ignores the incremental cutoff: an old or foreign client can update a history,
+     * favourite, bookmark or category row without touching its parent, and that dependent row still
+     * has to resolve to the manga row this device holds or it misses the foreign key and is dropped.
+     * Only the three identity columns are read, so the row pulls below stay incremental. A failure
+     * propagates and aborts the pull rather than writing dependent rows under un-aliased ids.
+     */
+    private suspend fun pullMangaIdentities() {
+        val text = fetch("nyora_manga?select=id,url,source_ref") ?: return
+        val aliases = pulledMangaIdAliasMap(JSONArray(text)) { index, error ->
+            android.util.Log.e("SupabaseSync", "pullMangaIdentities row $index failed", error)
+        }
+        pulledMangaIdAliases.putAll(aliases)
+    }
+
     private suspend fun pullManga(cutoff: String) {
         val text = fetch("nyora_manga?select=id,title,alt_titles,url,public_url,rating,is_nsfw,content_rating,cover_url,large_cover_url,state,authors,source_ref,description,tags,updated_at", cutoff) ?: return
         runCatching {
             val arr = JSONArray(text)
-            // Alias every row before a winner is chosen, or the key a duplicate collapses on would
-            // depend on which of the two backend rows happened to arrive first.
-            for (i in 0 until arr.length()) {
-                try {
-                    val row = arr.getJSONObject(i)
-                    val remoteId = row.getString("id")
-                    val localId = pulledMangaIdAlias(remoteId, row.getString("source_ref"), row.getString("url"))
-                    if (localId != remoteId) pulledMangaIdAliases[remoteId] = localId
-                } catch (e: Exception) {
-                    android.util.Log.e("SupabaseSync", "pullManga alias row failed", e)
-                }
-            }
+            // The alias map is complete before this runs, so the key a duplicate collapses on never
+            // depends on which of the two backend rows happened to arrive first.
             for (row in newestCanonicalJsonRows(arr) { canonicalPulledMangaId(it.getString("id")) }) {
                 try {
                     val mangaId = canonicalPulledMangaId(row.getString("id"))

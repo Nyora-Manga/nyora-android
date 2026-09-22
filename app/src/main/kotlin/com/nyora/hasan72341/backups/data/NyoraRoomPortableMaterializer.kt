@@ -5,6 +5,7 @@ import com.nyora.hasan72341.core.db.MangaDatabase
 import com.nyora.hasan72341.core.db.entity.MangaSourceEntity
 import com.nyora.hasan72341.core.db.entity.toEntity
 import com.nyora.hasan72341.core.model.DataDrivenMangaSource
+import com.nyora.hasan72341.core.parser.datadriven.stableChapterId
 import com.nyora.hasan72341.core.parser.datadriven.stableMangaId
 import com.nyora.hasan72341.favourites.data.FavouriteCategoryEntity
 import com.nyora.hasan72341.favourites.data.FavouriteEntity
@@ -36,18 +37,28 @@ class NyoraRoomPortableMaterializer(
 		// runtime, the migrations and the sync wire all key by. Every portable reference below is resolved
 		// through this map, and a mapping the projector already recorded wins so a row the device holds
 		// under some other id is updated in place instead of duplicated.
+		val catalogueIds = snapshot.manga.associate { it.id to it.sourceId.removePrefix(DataDrivenMangaSource.PREFIX) }
 		val localMangaIds = snapshot.manga.associate { item ->
 			val localId = identityMap.findLocalKey("manga", item.id)
-				?: stableMangaId(item.sourceId.removePrefix(DataDrivenMangaSource.PREFIX), item.contentKey)
-			identityMap.recordLocalKeyIfAbsent("manga", item.id, localId)
+				?: stableMangaId(catalogueIds.getValue(item.id), item.contentKey)
 			item.id to localId
 		}
+		identityMap.recordLocalKeysIfAbsent(
+			localMangaIds.map { (portableId, localId) -> NyoraBackupIdentityMapEntity("manga", portableId, localId) },
+		)
+		// A chapter id obeys the same rule as a manga id. The data-driven runtime restamps every list it
+		// refetches with `<source> chapter <url>`, so a chapter restored under its portable id is replaced
+		// on the first refresh and every history or bookmark row pointing at it is left dangling.
+		val localChapterIds = snapshot.chapters.mapNotNull { chapter ->
+			val catalogueId = catalogueIds[chapter.mangaId] ?: return@mapNotNull null
+			chapter.id to stableChapterId(catalogueId, chapter.chapterKey)
+		}.toMap()
 		// Manga owns device-only children (downloads, statistics and reader preferences). Never delete it here:
 		// an absent portable row is excluded from the ledger/library while its local Room graph remains intact.
 		snapshot.manga.filter { it.deletedAt == null }.forEach { item ->
 			val chapters = chaptersByManga[item.id].orEmpty().mapIndexed { index, chapter ->
 				MangaChapter(
-					id = chapter.id,
+					id = localChapterIds.getValue(chapter.id),
 					title = chapter.name,
 					number = chapter.number?.toFloat() ?: 0f,
 					url = chapter.chapterKey,
@@ -133,7 +144,7 @@ class NyoraRoomPortableMaterializer(
 				localMangaId,
 				millis(item.updatedAt),
 				millis(item.updatedAt),
-				item.chapterId.orEmpty(),
+				localChapterId(localChapterIds, item.chapterId),
 				item.page ?: 0,
 				0f,
 				item.percent?.toFloat() ?: 0f,
@@ -157,7 +168,7 @@ class NyoraRoomPortableMaterializer(
 				BookmarkEntity(
 					mangaId = localMangaId,
 					pageId = item.id,
-					chapterId = item.chapterId.orEmpty(),
+					chapterId = localChapterId(localChapterIds, item.chapterId),
 					page = item.page ?: 0,
 					scroll = 0,
 					imageUrl = "",
@@ -186,6 +197,13 @@ class NyoraRoomPortableMaterializer(
 			)
 		}
 	}
+
+	/**
+	 * The local id of the chapter a portable row points at, or the portable id itself when the
+	 * archive carries no chapter row for it and nothing better can be derived.
+	 */
+	private fun localChapterId(localChapterIds: Map<String, String>, portableChapterId: String?): String =
+		portableChapterId?.let { localChapterIds[it] ?: it }.orEmpty()
 
 	private fun millis(timestamp: String): Long = Instant.parse(timestamp).toEpochMilli()
 

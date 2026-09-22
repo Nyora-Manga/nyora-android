@@ -1,6 +1,7 @@
 package com.nyora.hasan72341.sync.supabase
 
 import com.nyora.hasan72341.core.parser.datadriven.stableMangaId
+import org.json.JSONArray
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -77,6 +78,55 @@ class SupabasePullAliasTest {
 			stableMangaId("mangasusuku", "/manga/y"),
 			pulledMangaIdAlias("abc", "data:komikindo-info", "/manga/y"),
 		)
+	}
+
+	@Test
+	fun `the alias map covers every parent row, not only the ones a cutoff selected`() {
+		val rows = JSONArray(
+			"""
+			[
+				{"id":"abc","url":"/manga/x","source_ref":"{\"name\":\"data:hiperdex\"}"},
+				{"id":"def","url":"/manga/y","source_ref":"data:bananascan-com"},
+				{"id":"ghi","url":"/manga/z","source_ref":"{\"name\":\"LOCAL\"}"}
+			]
+			""",
+		)
+
+		val aliases = pulledMangaIdAliasMap(rows)
+
+		// A history row whose parent was not itself updated still resolves to the local id.
+		assertEquals(stableMangaId("hiperdex", "/manga/x"), aliases["abc"])
+		assertEquals(stableMangaId("bananascan_com", "/manga/y"), aliases["def"])
+		// A source this client does not hash ids for is left out so the remote id is kept.
+		assertNull(aliases["ghi"])
+		assertEquals(2, aliases.size)
+	}
+
+	@Test
+	fun `a malformed parent row is reported and skipped without costing the map`() {
+		val rows = JSONArray(
+			"""
+			[
+				{"id":"abc","source_ref":"data:hiperdex"},
+				{"id":"def","url":"/manga/y","source_ref":"data:hiperdex"}
+			]
+			""",
+		)
+		val failures = mutableListOf<Int>()
+
+		val aliases = pulledMangaIdAliasMap(rows) { index, _ -> failures += index }
+
+		assertEquals(listOf(0), failures)
+		assertEquals(stableMangaId("hiperdex", "/manga/y"), aliases["def"])
+		assertEquals(1, aliases.size)
+	}
+
+	@Test
+	fun `an already canonical parent row adds no alias`() {
+		val canonical = stableMangaId("hiperdex", "/manga/x")
+		val rows = JSONArray("""[{"id":"$canonical","url":"/manga/x","source_ref":"data:hiperdex"}]""")
+
+		assertEquals(emptyMap<String, String>(), pulledMangaIdAliasMap(rows))
 	}
 
 	@Test

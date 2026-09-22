@@ -6,6 +6,7 @@ import com.nyora.hasan72341.core.parser.datadriven.canonicalDataSourceId
 import com.nyora.hasan72341.core.parser.datadriven.decodeStoredSourceName
 import com.nyora.hasan72341.core.parser.datadriven.stableMangaId
 import java.util.Locale
+import org.json.JSONArray
 
 /**
  * Pure identity helpers for the cloud pull.
@@ -43,6 +44,32 @@ internal fun canonicalPulledSourceId(storedSourceRef: String): String? {
 internal fun pulledMangaIdAlias(remoteId: String, storedSourceRef: String, mangaUrl: String): String {
 	val sourceId = canonicalPulledSourceId(storedSourceRef) ?: return remoteId
 	return stableMangaId(sourceId.removePrefix(DataDrivenMangaSource.PREFIX), mangaUrl)
+}
+
+/**
+ * The remote id -> local id map a pull keys every dependent row through.
+ *
+ * Built from the complete remote parent set rather than the rows a cutoff selected: a foreign client
+ * can update only a history, favourite, bookmark or category row, and that row still has to land
+ * under the manga id this device holds. Rows that already carry their canonical id are left out, and
+ * a row missing a column is reported and skipped so one malformed parent cannot cost the whole map.
+ */
+internal fun pulledMangaIdAliasMap(
+	rows: JSONArray,
+	onRowError: (Int, Throwable) -> Unit = { _, _ -> },
+): Map<String, String> {
+	val aliases = HashMap<String, String>()
+	for (index in 0 until rows.length()) {
+		try {
+			val row = rows.getJSONObject(index)
+			val remoteId = row.getString("id")
+			val localId = pulledMangaIdAlias(remoteId, row.getString("source_ref"), row.getString("url"))
+			if (localId != remoteId) aliases[remoteId] = localId
+		} catch (error: Exception) {
+			onRowError(index, error)
+		}
+	}
+	return aliases
 }
 
 internal data class CanonicalAliasCandidate(

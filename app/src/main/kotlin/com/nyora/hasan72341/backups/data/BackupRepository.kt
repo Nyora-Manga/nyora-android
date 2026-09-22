@@ -26,6 +26,7 @@ class BackupRepository @Inject constructor(
 	private val delegate = NyoraRoomBackupRepository(
 		database = database,
 		initialSnapshot = projector::snapshot,
+		persistIdentities = projector::recordLocalIdentities,
 		materializer = NyoraRoomPortableMaterializer(database),
 		observerGate = NyoraRoomBackupObserverGate(database, backupObserver),
 		// The catalogue already exposes the canonical `data:` identity backups are written under.
