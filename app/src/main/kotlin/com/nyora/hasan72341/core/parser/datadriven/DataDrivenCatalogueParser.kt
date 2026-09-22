@@ -137,7 +137,8 @@ private fun unwrap(value: Any?): Any? = when (value) {
 private fun String.withoutDataDrivenPrefix(): String =
 	if (startsWith("DD_", ignoreCase = true)) substring(3) else this
 
-private fun <T> Map<String, T>.dataDrivenPatchValue(rowId: String): T? {
+/** The patch entry for a catalogue row, accepting either spelling of the key. */
+internal fun <T> Map<String, T>.dataDrivenPatchValue(rowId: String): T? {
 	val bareId = rowId.withoutDataDrivenPrefix()
 	return entries.firstOrNull { (key, _) -> key.equals("DD_$bareId", ignoreCase = true) }?.value
 		?: entries.firstOrNull { (key, _) -> key.withoutDataDrivenPrefix().equals(bareId, ignoreCase = true) }?.value

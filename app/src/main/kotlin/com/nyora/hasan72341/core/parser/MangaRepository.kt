@@ -118,16 +118,50 @@ interface MangaRepository {
 			}
 		}
 
-		private fun createDataDrivenRepository(source: DataDrivenMangaSource): MangaRepository {
-			val settings = SourceSettings(context, source)
-			val domainKey = ConfigKey.Domain(source.domain)
-			return DataDrivenMangaRepository(
+		/**
+		 * A handful of sites need more than catalogue data: a request signature, a protobuf decoder
+		 * or an API the generic engines cannot describe. Those rows are routed to a native adapter
+		 * here, and everything else runs on the engine its `engineKey` names.
+		 */
+		private fun createDataDrivenRepository(source: DataDrivenMangaSource): MangaRepository = when {
+			source.engineKey == MangaFireMangaRepository.ENGINE_KEY -> MangaFireMangaRepository(
 				source = source,
 				okHttpClient = okHttpClient,
 				cache = contentCache,
-				// The user's per-source domain, or null while they are still on the catalogue's.
-				domainOverride = { settings[domainKey].takeIf { it != source.domain } },
 			)
+
+			source.engineKey == MangaPlusMangaRepository.ENGINE_KEY -> MangaPlusMangaRepository(
+				source = source,
+				okHttpClient = okHttpClient,
+				cache = contentCache,
+			)
+
+			source.name in NatoMangaRepository.SOURCE_NAMES -> NatoMangaRepository(
+				source = source,
+				okHttpClient = okHttpClient,
+				cache = contentCache,
+				domainOverride = domainOverride(source),
+			)
+
+			source.name in ToonDexMangaRepository.SOURCE_NAMES -> ToonDexMangaRepository(
+				source = source,
+				okHttpClient = okHttpClient,
+				cache = contentCache,
+			)
+
+			else -> DataDrivenMangaRepository(
+				source = source,
+				okHttpClient = okHttpClient,
+				cache = contentCache,
+				domainOverride = domainOverride(source),
+			)
+		}
+
+		/** The user's per-source domain, or null while they are still on the catalogue's. */
+		private fun domainOverride(source: DataDrivenMangaSource): () -> String? {
+			val settings = SourceSettings(context, source)
+			val domainKey = ConfigKey.Domain(source.domain)
+			return { settings[domainKey].takeIf { it != source.domain } }
 		}
 	}
 }
