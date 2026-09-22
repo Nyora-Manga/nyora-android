@@ -258,6 +258,7 @@ dependencies {
 	implementation libs.conscrypt.android
 	implementation libs.sentry.android
 
+	implementation project(':engine')
 	implementation project(':translator')
 
     implementation libs.compose.material3

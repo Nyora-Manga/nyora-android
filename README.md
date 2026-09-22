@@ -207,6 +207,7 @@ Newer releases are published on the same Releases page. Download and install the
 ```bash
 git clone https://github.com/Hasan72341/nyora-android.git
 cd nyora-android
+git submodule update --init --recursive   # the data-driven source catalogue
 ./gradlew assembleRelease   # or open in Android Studio and Run ▸ app
 ```
 
@@ -332,6 +333,7 @@ This is the contributor quickstart for hacking on the **Android app** itself (di
 ```bash
 git clone https://github.com/Hasan72341/nyora-android.git
 cd nyora-android
+git submodule update --init --recursive   # the data-driven source catalogue
 ./gradlew assembleDebug      # builds a debug APK
 ```
 
