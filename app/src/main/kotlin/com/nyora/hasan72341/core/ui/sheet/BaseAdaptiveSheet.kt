@@ -24,11 +24,11 @@ import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.sidesheet.SideSheetDialog
 import dagger.hilt.android.EntryPointAccessors
-import com.nyora.hasan72341.R
 import com.nyora.hasan72341.core.exceptions.resolve.ExceptionResolver
 import com.nyora.hasan72341.core.ui.BaseActivity
 import com.nyora.hasan72341.core.ui.BaseActivityEntryPoint
 import com.nyora.hasan72341.core.ui.util.ActionModeDelegate
+import com.nyora.hasan72341.core.ui.util.windowSizeClasses
 import com.google.android.material.R as materialR
 
 abstract class BaseAdaptiveSheet<B : ViewBinding> : AppCompatDialogFragment(),
@@ -93,7 +93,7 @@ abstract class BaseAdaptiveSheet<B : ViewBinding> : AppCompatDialogFragment(),
 
 	override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
 		val context = requireContext()
-		val dialog = if (context.resources.getBoolean(R.bool.is_tablet)) {
+		val dialog = if (windowSizeClasses.isAtLeastMediumWidth) {
 			SideSheetDialogImpl(context, theme)
 		} else {
 			BottomSheetDialogImpl(context, theme)

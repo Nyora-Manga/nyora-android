@@ -15,6 +15,7 @@ import androidx.core.view.ancestors
 import androidx.core.view.isGone
 import androidx.core.view.isVisible
 import com.nyora.hasan72341.R
+import com.nyora.hasan72341.core.ui.util.windowSizeClasses
 import com.nyora.hasan72341.databinding.LayoutSheetHeaderAdaptiveBinding
 
 class AdaptiveSheetHeaderBar @JvmOverloads constructor(
@@ -50,9 +51,9 @@ class AdaptiveSheetHeaderBar @JvmOverloads constructor(
 	override fun onAttachedToWindow() {
 		super.onAttachedToWindow()
 		if (isInEditMode) {
-			val isTabled = resources.getBoolean(R.bool.is_tablet)
-			binding.shDragHandle.isGone = isTabled
-			binding.shLayoutSidesheet.isVisible = isTabled
+			val isSideSheet = windowSizeClasses.isAtLeastMediumWidth
+			binding.shDragHandle.isGone = isSideSheet
+			binding.shLayoutSidesheet.isVisible = isSideSheet
 		} else {
 			setBottomSheetBehavior(findParentSheetBehavior())
 		}

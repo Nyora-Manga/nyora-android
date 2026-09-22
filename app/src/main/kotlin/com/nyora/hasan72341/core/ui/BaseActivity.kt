@@ -52,18 +52,10 @@ abstract class BaseActivity<B : ViewBinding> :
 
 	override fun attachBaseContext(newBase: Context) {
 		entryPoint = EntryPointAccessors.fromApplication<BaseActivityEntryPoint>(newBase.applicationContext)
-		
-		val newConfig = Configuration(newBase.resources.configuration)
-		newConfig.fontScale = 1.0f
-		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-			newConfig.densityDpi = android.util.DisplayMetrics.DENSITY_DEVICE_STABLE
-		}
-		val context = newBase.createConfigurationContext(newConfig)
-		
 		if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
 			AppCompatDelegate.setApplicationLocales(entryPoint.settings.appLocales)
 		}
-		super.attachBaseContext(context)
+		super.attachBaseContext(newBase)
 	}
 
 	override fun onCreate(savedInstanceState: Bundle?) {
