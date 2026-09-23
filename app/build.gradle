@@ -79,8 +79,8 @@ android {
 		applicationId 'com.nyora.hasan72341'
 		minSdk = 23
 		targetSdk = 36
-		versionCode project.hasProperty('versionCode') ? project.property('versionCode').toInteger() : 27300
-        versionName project.hasProperty('versionName') ? project.property('versionName') : '2.7.3'
+		versionCode project.hasProperty('versionCode') ? project.property('versionCode').toInteger() : 28000
+        versionName project.hasProperty('versionName') ? project.property('versionName') : '2.8.0'
         generatedDensities = []
 		testInstrumentationRunner 'com.nyora.hasan72341.HiltTestRunner'
 		buildConfigField "String", "SUPABASE_URL", "\"${supabaseEnv('SUPABASE_URL')}\""
