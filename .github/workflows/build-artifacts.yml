@@ -40,6 +40,8 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       - name: Configure Gradle memory for CI
         # The project gradle.properties asks for 8 GB for both the Gradle and
