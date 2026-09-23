@@ -74,9 +74,6 @@ open class BaseApp : Application(), Configuration.Provider {
 
 	override fun onCreate() {
 		super.onCreate()
-		// Load the obfuscated-domain table before any parser resolves its domain (release builds
-		// have their domain constants rewritten to DomainVault.d(index); see buildSrc).
-		com.nyora.hasan72341.core.vault.DomainVault.init(this)
 		PlatformRegistry.applicationContext = this // TODO replace with OkHttp.initialize
 		AppCompatDelegate.setDefaultNightMode(settings.theme)
 		
@@ -111,8 +108,13 @@ open class BaseApp : Application(), Configuration.Provider {
 
 	override fun attachBaseContext(base: Context) {
 		super.attachBaseContext(base)
-		// ACRA removed
-	} 
+		// Load the obfuscated-domain table before any class the domain-obfuscation plugin
+		// instrumented can initialise: release and nightly builds have their domain constants
+		// rewritten to DomainVault.d(index) (see build-logic), and a companion that runs before
+		// the table is loaded would keep "" for the process lifetime. Nothing injected has run yet
+		// here, and the base context already serves the assets.
+		com.nyora.hasan72341.core.vault.DomainVault.init(base)
+	}
 
 	@WorkerThread
 	private fun setupDatabaseObservers() {
