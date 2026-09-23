@@ -59,8 +59,8 @@ object FrameRateManager {
     private fun boostApi35(window: Window) {
         try {
             window.setFrameRateBoostOnTouchEnabled(true)
-        } catch (_: Exception) {
-            // Not all OEMs implement this correctly
+        } catch (_: Throwable) {
+            // OEM builds may reject the request; never fail activity creation over a hint.
         }
     }
 }

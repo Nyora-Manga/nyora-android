@@ -24,7 +24,7 @@ class ExternalBackupStorage @Inject constructor(
 
 	suspend fun list(): List<BackupFile> = runInterruptible(Dispatchers.IO) {
 		getRootOrThrow().listFiles().mapNotNull {
-			if (it.isFile && it.canRead()) {
+			if (it.isFile && it.canRead() && NyoraBackupFiles.isSupported(it.name)) {
 				BackupFile(
 					uri = it.uri,
 					dateTime = it.name?.let { fileName ->
@@ -46,8 +46,8 @@ class ExternalBackupStorage @Inject constructor(
 	suspend fun put(file: File): Uri = runInterruptible(Dispatchers.IO) {
 		val out = checkNotNull(
 			getRootOrThrow().createFile(
-				"application/zip",
-				file.nameWithoutExtension,
+				NyoraBackupFiles.MIME_TYPE,
+				file.name,
 			),
 		) {
 			"Cannot create target backup file"

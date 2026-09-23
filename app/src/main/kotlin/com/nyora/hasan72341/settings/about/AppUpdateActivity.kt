@@ -17,12 +17,12 @@ import com.nyora.hasan72341.R
 import com.nyora.hasan72341.core.github.AppVersion
 import com.nyora.hasan72341.core.nav.router
 import com.nyora.hasan72341.core.ui.BaseActivity
-import com.nyora.hasan72341.core.util.ext.consumeAllSystemBarsInsets
+import com.nyora.hasan72341.core.util.ext.consumeAllContentInsets
 import com.nyora.hasan72341.core.util.ext.getDisplayMessage
 import com.nyora.hasan72341.core.util.ext.observe
 import com.nyora.hasan72341.core.util.ext.observeEvent
 import com.nyora.hasan72341.core.util.ext.setTextAndVisible
-import com.nyora.hasan72341.core.util.ext.systemBarsInsets
+import com.nyora.hasan72341.core.util.ext.contentInsets
 import com.nyora.hasan72341.databinding.ActivityAppUpdateBinding
 
 @AndroidEntryPoint
@@ -47,7 +47,7 @@ class AppUpdateActivity : BaseActivity<ActivityAppUpdateBinding>(), View.OnClick
 		v: View,
 		insets: WindowInsetsCompat
 	): WindowInsetsCompat {
-		val barsInsets = insets.systemBarsInsets
+		val barsInsets = insets.contentInsets
 		viewBinding.root.updatePadding(top = barsInsets.top)
 		viewBinding.dockedToolbarChild.updateLayoutParams<MarginLayoutParams> {
 			leftMargin = barsInsets.left
@@ -58,7 +58,7 @@ class AppUpdateActivity : BaseActivity<ActivityAppUpdateBinding>(), View.OnClick
 			left = barsInsets.left,
 			right = barsInsets.right,
 		)
-		return insets.consumeAllSystemBarsInsets()
+		return insets.consumeAllContentInsets()
 	}
 
 	override fun onClick(v: View) {

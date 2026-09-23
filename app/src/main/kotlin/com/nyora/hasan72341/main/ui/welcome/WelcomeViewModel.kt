@@ -9,7 +9,7 @@ import com.nyora.hasan72341.core.LocalizedAppContext
 import com.nyora.hasan72341.core.model.contentTypeOrManga
 import com.nyora.hasan72341.core.model.isHentai
 import com.nyora.hasan72341.core.model.localeCode
-import com.nyora.hasan72341.core.parser.datadriven.DataDrivenCatalogueRepository
+import com.nyora.hasan72341.core.parser.datadriven.DataDrivenCatalogue
 import com.nyora.hasan72341.core.prefs.AppSettings
 import com.nyora.hasan72341.core.ui.BaseViewModel
 import com.nyora.hasan72341.core.util.LocaleComparator
@@ -26,7 +26,7 @@ import javax.inject.Inject
 @HiltViewModel
 class WelcomeViewModel @Inject constructor(
 	private val repository: MangaSourcesRepository,
-	private val catalogue: DataDrivenCatalogueRepository,
+	private val catalogue: DataDrivenCatalogue,
 	private val settings: AppSettings,
 	@LocalizedAppContext context: Context,
 ) : BaseViewModel() {
@@ -54,13 +54,9 @@ class WelcomeViewModel @Inject constructor(
 
 	init {
 		updateJob = launchJob(Dispatchers.IO) {
-			// Sources are the runtime data-driven catalogue, which may not have loaded yet on a fresh
-			// install. Without this the locale/content-type chips derive from an empty set and render
-			// blank, so fetch the catalogue before computing the options.
-			if (repository.allMangaSources.isEmpty()) {
-				catalogue.refresh()
-				repository.assimilateFromCatalogue()
-			}
+			// The catalogue ships in the APK; parse it now so the locale/content-type chips derive
+			// from the real source set (the DEFAULT_* lists below only cover an unreadable bundle).
+			catalogue.warmUp()
 			val allSources = repository.allMangaSources
 			val localesGroups = allSources.groupBy { it.localeCode().toLocale() }
 
@@ -125,7 +121,7 @@ class WelcomeViewModel @Inject constructor(
 		val languages = locales.value.selectedItems.mapToSet { it.language }
 			.filterTo(HashSet()) { it.isNotEmpty() }
 		val types = types.value.selectedItems
-		// Persist the choice so sources ADDED LATER (a pasted catalogue repo) honour it too, not just
+		// Persist the choice so sources ADDED LATER (a refreshed catalogue) honour it too, not just
 		// the ones present now. Empty = all languages.
 		settings.enabledSourceLanguages = languages
 		val enabledSources = repository.allMangaSources.filterTo(HashSet()) { x ->
@@ -135,8 +131,8 @@ class WelcomeViewModel @Inject constructor(
 	}
 
 	private companion object {
-		// Canonical fallback so onboarding still offers content types if the catalogue can't be
-		// fetched (e.g. offline on a fresh install); once sources load, the real set replaces it.
+		// Canonical fallback so onboarding still offers content types if the bundled catalogue
+		// cannot be read; once sources load, the real set replaces it.
 		private val DEFAULT_CONTENT_TYPES = listOf(
 			ContentType.MANGA,
 			ContentType.MANHWA,
@@ -146,8 +142,8 @@ class WelcomeViewModel @Inject constructor(
 			ContentType.HENTAI_MANGA,
 		)
 
-		// Canonical language list for onboarding when no catalogue is loaded yet (the app ships
-		// source-less). The choice is saved and applied to sources added later via a catalogue repo.
+		// Canonical language list for onboarding when no catalogue is loaded yet. The choice is
+		// saved and applied to sources a later catalogue refresh adds.
 		private val DEFAULT_LOCALES: List<Locale> = listOf(
 			"en", "ja", "ko", "zh", "es", "pt", "fr", "de", "ru", "id", "it", "ar", "tr", "vi", "th", "pl",
 		).map { Locale.forLanguageTag(it) }

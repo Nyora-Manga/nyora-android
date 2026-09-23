@@ -12,6 +12,7 @@ import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.Response
 import okhttp3.internal.closeQuietly
 import com.nyora.hasan72341.R
+import com.nyora.hasan72341.backups.domain.NyoraBackupFiles
 import com.nyora.hasan72341.core.nav.AppRouter
 import com.nyora.hasan72341.core.network.BaseHttpClient
 import com.nyora.hasan72341.core.prefs.AppSettings
@@ -34,7 +35,7 @@ class TelegramBackupUploader @Inject constructor(
 		get() = botToken.isNotEmpty()
 
 	suspend fun uploadBackup(file: File) {
-		val requestBody = file.asRequestBody("application/zip".toMediaTypeOrNull())
+		val requestBody = file.asRequestBody(NyoraBackupFiles.MIME_TYPE.toMediaTypeOrNull())
 		val multipartBody = MultipartBody.Builder()
 			.setType(MultipartBody.FORM)
 			.addFormDataPart("chat_id", requireChatId())

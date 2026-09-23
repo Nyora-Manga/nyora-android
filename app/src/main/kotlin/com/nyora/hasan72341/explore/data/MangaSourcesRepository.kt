@@ -7,11 +7,14 @@ import com.nyora.hasan72341.core.LocalizedAppContext
 import com.nyora.hasan72341.core.db.MangaDatabase
 import com.nyora.hasan72341.core.db.dao.MangaSourcesDao
 import com.nyora.hasan72341.core.db.entity.MangaSourceEntity
+import com.nyora.hasan72341.core.model.DataDrivenMangaSource
 import com.nyora.hasan72341.core.model.MangaSourceInfo
 import com.nyora.hasan72341.core.model.getTitle
 import com.nyora.hasan72341.core.model.isNsfw
 import com.nyora.hasan72341.core.model.getContentTypeOrNull
 import com.nyora.hasan72341.core.model.localeCode
+import com.nyora.hasan72341.core.parser.datadriven.DataDrivenCatalogue
+import com.nyora.hasan72341.core.parser.datadriven.findCanonical
 import com.nyora.hasan72341.core.prefs.AppSettings
 import com.nyora.hasan72341.core.prefs.observeAsFlow
 import com.nyora.hasan72341.core.ui.util.ReversibleHandle
@@ -24,12 +27,10 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import com.nyora.hasan72341.mihon.parsers.model.ContentType
-import com.nyora.hasan72341.mihon.parsers.model.MangaParserSource
 import com.nyora.hasan72341.mihon.parsers.model.MangaSource
 import com.nyora.hasan72341.mihon.parsers.network.CloudFlareHelper
 import com.nyora.hasan72341.mihon.parsers.util.mapToSet
 import java.util.HashSet
-import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -38,7 +39,7 @@ class MangaSourcesRepository @Inject constructor(
     @LocalizedAppContext private val context: Context,
     private val db: MangaDatabase,
     private val settings: AppSettings,
-    private val catalogue: com.nyora.hasan72341.core.parser.datadriven.DataDrivenCatalogueRepository,
+    private val catalogue: DataDrivenCatalogue,
 ) {
 
 	// Last-assimilated size; re-runs when it changes so a late-arriving catalogue is picked up.
@@ -47,15 +48,10 @@ class MangaSourcesRepository @Inject constructor(
 	private val dao: MangaSourcesDao
 		get() = db.getSourcesDao()
 
-	// Data-driven catalogue sources plus the native (stripped) MangaParserSource enum.
-	val allMangaSources: Set<MangaSource>
-		get() {
-			val out = MangaParserSource.entries.filterNotTo(HashSet<MangaSource>()) {
-				it.isBroken || it.name in com.nyora.hasan72341.core.SourcePatches.DEAD_SOURCES
-			}
-			out.addAll(catalogue.sources)
-			return out
-		}
+	// The data-driven catalogue is the only first-class source family in the app. Native
+	// Nyora/Mihon sources are intentionally not surfaced through the app source catalog.
+	val allMangaSources: Set<DataDrivenMangaSource>
+		get() = catalogue.sources.toSet()
 
 	val totalSourcesCountGated: Int
 		get() = if (settings.isSourcesUnlocked) allMangaSources.size else 0
@@ -190,9 +186,10 @@ class MangaSourcesRepository @Inject constructor(
 			emptyList()
 		} else {
 			val result = ArrayList<Pair<MangaSource, Boolean>>(entities.size)
+			val known = allMangaSources
 			for (entity in entities) {
 				val source = entity.source.toMangaSourceOrNull() ?: continue
-				if (source in allMangaSources) {
+				if (source in known) {
 					result.add(source to entity.isEnabled)
 				}
 			}
@@ -302,7 +299,7 @@ class MangaSourcesRepository @Inject constructor(
 		var maxSortKey = dao.getMaxSortKey()
 		val isAllEnabled = settings.isAllSourcesEnabled
 		// Onboarding language choice; empty = all. Newly-arrived data-driven sources are default-enabled
-		// only when their language matches, so a pasted catalogue honours the onboarding selection.
+		// only when their language matches, so a refreshed catalogue honours the onboarding selection.
 		val langPref = settings.enabledSourceLanguages
 		val entities = new.map { x ->
 			MangaSourceEntity(
@@ -310,7 +307,7 @@ class MangaSourcesRepository @Inject constructor(
 				// arrival (the app is otherwise source-less), subject to the onboarding language
 				// filter; other kinds follow the user setting.
 				isEnabled = isAllEnabled || (
-					com.nyora.hasan72341.core.model.DataDrivenMangaSource.isDataDriven(x.name) &&
+					x is DataDrivenMangaSource &&
 						(langPref.isEmpty() || x.localeCode() in langPref)
 					),
 				source = x.name,
@@ -418,10 +415,17 @@ class MangaSourcesRepository @Inject constructor(
 		isSourcesUnlocked
 	}
 
-	// Central resolver so every kind resolves: content:, native enum, and DD_ data-driven sources.
-	private fun String.toMangaSourceOrNull(): MangaSource? =
-		com.nyora.hasan72341.core.model.MangaSource(this)
-			.takeUnless { it == com.nyora.hasan72341.core.model.UnknownMangaSource }
+	private fun String.toMangaSourceOrNull(): MangaSource? {
+		if (startsWith(DataDrivenMangaSource.PREFIX)) {
+			// Only a catalogue row counts as a source here: an unknown `data:` name would otherwise
+			// show up in the source list as an entry nothing can browse.
+			return catalogue.findCanonical(this)
+		}
+		if (startsWith("content:")) {
+			return com.nyora.hasan72341.core.model.MangaSource(this)
+		}
+		return null
+	}
 }
 
 private fun org.koitharu.kotatsu.parsers.model.ContentType.toNyoraContentType(): ContentType = when (this) {

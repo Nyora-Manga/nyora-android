@@ -143,7 +143,8 @@ private fun decodeSourceRef(raw: String): MangaSourceRef {
     return when {
         name == "LOCAL" -> MangaSourceRef.Local
         name == "UNKNOWN" -> MangaSourceRef.Unknown
-        name.startsWith("MIHON_") -> MangaSourceRef.Mihon(name, name.removePrefix("MIHON_").toLongOrNull() ?: 0L)
+        name.startsWith("data:") -> runCatching { MangaSourceRef.Data(name) }.getOrDefault(MangaSourceRef.Unknown)
+        name.startsWith("MIHON_") || name.startsWith("mihon:") || name.all(Char::isDigit) -> MangaSourceRef.Unknown
         name.startsWith("JS_") -> MangaSourceRef.Script(name)
         else -> MangaSourceRef.Parser(name)
     }

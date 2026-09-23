@@ -18,11 +18,11 @@ import com.nyora.hasan72341.core.model.FavouriteCategory
 import com.nyora.hasan72341.core.nav.router
 import com.nyora.hasan72341.core.ui.BaseActivity
 import com.nyora.hasan72341.core.ui.list.ListSelectionController
-import com.nyora.hasan72341.core.util.ext.consumeAllSystemBarsInsets
+import com.nyora.hasan72341.core.util.ext.consumeAllContentInsets
 import com.nyora.hasan72341.core.util.ext.end
 import com.nyora.hasan72341.core.util.ext.observe
 import com.nyora.hasan72341.core.util.ext.observeEvent
-import com.nyora.hasan72341.core.util.ext.systemBarsInsets
+import com.nyora.hasan72341.core.util.ext.contentInsets
 import com.nyora.hasan72341.databinding.ActivityCategoriesBinding
 import com.nyora.hasan72341.favourites.ui.categories.adapter.CategoriesAdapter
 import com.nyora.hasan72341.list.ui.adapter.ListStateHolderListener
@@ -75,7 +75,7 @@ class FavouriteCategoriesActivity :
 		v: View,
 		insets: WindowInsetsCompat
 	): WindowInsetsCompat {
-		val barsInsets = insets.systemBarsInsets
+		val barsInsets = insets.contentInsets
 		viewBinding.recyclerView.updatePadding(
 			left = barsInsets.left,
 			right = barsInsets.right,
@@ -90,7 +90,7 @@ class FavouriteCategoriesActivity :
 			marginEnd = topMargin + barsInsets.end(v)
 			bottomMargin = topMargin + barsInsets.bottom
 		}
-		return insets.consumeAllSystemBarsInsets()
+		return insets.consumeAllContentInsets()
 	}
 
 	override fun onClick(v: View) {

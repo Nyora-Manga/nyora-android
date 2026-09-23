@@ -18,12 +18,12 @@ import com.nyora.hasan72341.core.ui.dialog.buildAlertDialog
 import com.nyora.hasan72341.core.ui.dialog.setRecyclerViewList
 import com.nyora.hasan72341.core.ui.list.OnListItemClickListener
 import com.nyora.hasan72341.core.ui.util.RecyclerViewOwner
-import com.nyora.hasan72341.core.util.ext.consumeAllSystemBarsInsets
+import com.nyora.hasan72341.core.util.ext.consumeAllContentInsets
 import com.nyora.hasan72341.core.util.ext.container
 import com.nyora.hasan72341.core.util.ext.end
 import com.nyora.hasan72341.core.util.ext.observe
 import com.nyora.hasan72341.core.util.ext.start
-import com.nyora.hasan72341.core.util.ext.systemBarsInsets
+import com.nyora.hasan72341.core.util.ext.contentInsets
 import com.nyora.hasan72341.databinding.FragmentSettingsSourcesBinding
 import com.nyora.hasan72341.list.ui.adapter.ListItemType
 import com.nyora.hasan72341.list.ui.model.ListModel
@@ -67,7 +67,7 @@ class NavConfigFragment : BaseFragment<FragmentSettingsSourcesBinding>(), Recycl
 	}
 
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val barsInsets = insets.systemBarsInsets
+		val barsInsets = insets.contentInsets
 		val isTablet = !resources.getBoolean(R.bool.is_tablet)
 		val isMaster = container?.id == R.id.container_master
 		v.setPaddingRelative(
@@ -76,7 +76,7 @@ class NavConfigFragment : BaseFragment<FragmentSettingsSourcesBinding>(), Recycl
 			if (isTablet && isMaster) 0 else barsInsets.end(v),
 			barsInsets.bottom,
 		)
-		return insets.consumeAllSystemBarsInsets()
+		return insets.consumeAllContentInsets()
 	}
 
 	override fun onResume() {

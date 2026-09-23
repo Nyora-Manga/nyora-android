@@ -12,6 +12,8 @@ import com.nyora.hasan72341.core.db.entity.MangaEntity
 
 @Dao
 abstract class MangaDao {
+	@Query("SELECT * FROM manga ORDER BY manga_id")
+	abstract suspend fun findAllForBackup(): List<MangaEntity>
 
 	@Transaction
 	@Query("SELECT * FROM manga WHERE manga_id = :id")

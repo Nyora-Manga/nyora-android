@@ -25,12 +25,18 @@ import com.nyora.hasan72341.list.domain.ReadingProgress.Companion.PROGRESS_COMPL
 
 @Dao
 abstract class FavouritesDao : MangaQueryBuilder.ConditionCallback {
+	@Query("SELECT * FROM favourites ORDER BY manga_id, category_id")
+	abstract suspend fun findAllForBackup(): List<FavouriteEntity>
 
 	/** SELECT **/
 
 	@Transaction
 	@Query("SELECT * FROM favourites WHERE deleted_at = 0 GROUP BY manga_id ORDER BY created_at DESC")
 	abstract suspend fun findAll(): List<FavouriteManga>
+
+	@Transaction
+	@Query("SELECT * FROM favourites WHERE deleted_at = 0 AND category_id NOT IN ($NYORA_UNCATEGORIZED_LOCAL_IDS) GROUP BY manga_id ORDER BY created_at DESC")
+	abstract suspend fun findAllForSync(): List<FavouriteManga>
 
 	@Transaction
 	@Query("SELECT * FROM favourites WHERE deleted_at = 0 GROUP BY manga_id ORDER BY created_at DESC LIMIT :limit")
@@ -57,7 +63,7 @@ abstract class FavouritesDao : MangaQueryBuilder.ConditionCallback {
 	@Query("SELECT * FROM favourites WHERE deleted_at = 0 ORDER BY created_at DESC LIMIT :limit OFFSET :offset")
 	abstract suspend fun findAllRaw(offset: Int, limit: Int): List<FavouriteManga>
 
-	@Query("SELECT DISTINCT manga_id FROM favourites WHERE deleted_at = 0 AND category_id IN (SELECT category_id FROM favourite_categories WHERE track = 1 AND deleted_at = 0)")
+	@Query("SELECT DISTINCT manga_id FROM favourites WHERE deleted_at = 0 AND category_id IN (SELECT category_id FROM favourite_categories WHERE track = 1 AND deleted_at = 0 AND category_id NOT IN ($NYORA_UNCATEGORIZED_LOCAL_IDS))")
 	abstract suspend fun findIdsWithTrack(): List<String>
 
 	@Transaction
@@ -126,13 +132,13 @@ abstract class FavouritesDao : MangaQueryBuilder.ConditionCallback {
 	@Query("SELECT * FROM favourites WHERE manga_id = :mangaId AND deleted_at = 0")
 	abstract suspend fun findAllRaw(mangaId: String): List<FavouriteEntity>
 
-	@Query("SELECT DISTINCT category_id FROM favourites WHERE manga_id = :id AND deleted_at = 0")
+	@Query("SELECT DISTINCT category_id FROM favourites WHERE manga_id = :id AND deleted_at = 0 AND category_id NOT IN ($NYORA_UNCATEGORIZED_LOCAL_IDS)")
 	abstract fun observeIds(id: String): Flow<List<Long>>
 
-	@Query("SELECT favourite_categories.* FROM favourites LEFT JOIN favourite_categories ON favourite_categories.category_id = favourites.category_id WHERE favourites.manga_id = :mangaId AND favourites.deleted_at = 0")
+	@Query("SELECT favourite_categories.* FROM favourites LEFT JOIN favourite_categories ON favourite_categories.category_id = favourites.category_id WHERE favourites.manga_id = :mangaId AND favourites.deleted_at = 0 AND favourite_categories.category_id NOT IN ($NYORA_UNCATEGORIZED_LOCAL_IDS)")
 	abstract fun observeCategories(mangaId: String): Flow<List<FavouriteCategoryEntity>>
 
-	@Query("SELECT DISTINCT category_id FROM favourites WHERE manga_id = :mangaId AND deleted_at = 0 ORDER BY favourites.created_at ASC")
+	@Query("SELECT DISTINCT category_id FROM favourites WHERE manga_id = :mangaId AND deleted_at = 0 AND category_id NOT IN ($NYORA_UNCATEGORIZED_LOCAL_IDS) ORDER BY favourites.created_at ASC")
 	abstract suspend fun findCategoriesIds(mangaId: String): List<Long>
 
 	@Query("SELECT COUNT(category_id) FROM favourites WHERE manga_id = :mangaId AND deleted_at = 0")

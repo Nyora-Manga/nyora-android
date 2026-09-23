@@ -100,9 +100,10 @@ interface NetworkModule {
             // Restore the *Lib family (api.cdnlibs.org): supply Origin/Referer and
             // flatten the new ProseMirror `summary` object back to a string.
             addInterceptor(LibApiHeadersInterceptor())
-            // Decrypt MangaPlus page images (no-op unless the per-page X-Nyora-Mangaplus-Key header
-            // is present); the data-driven mangaplus engine attaches that key per page.
-            addInterceptor(com.nyora.hasan72341.core.network.imageproxy.MangaPlusImageInterceptor())
+            // Recovers a Madara chapter list whose admin-AJAX action answers 4xx.
+            addInterceptor(MadaraChapterFix)
+            // Undoes the per-page XOR MANGA Plus serves its images under.
+            addInterceptor(MangaPlusImageInterceptor())
         }.build()
 
         @Provides

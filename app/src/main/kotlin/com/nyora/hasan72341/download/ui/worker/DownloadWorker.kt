@@ -235,9 +235,10 @@ class DownloadWorker @AssistedInject constructor(
 							launch {
 								semaphore.withPermit {
 									runFailsafe {
-										val url = repo.getPageUrl(page)
+										val pageRequest = repo.getPageRequest(page)
+										val url = pageRequest.url
 										val file = cache[url]
-											?: downloadFile(url, destination, repo.source)
+											?: downloadFile(url, destination, repo.source, pageRequest.headers)
 										output.addPage(
 											chapter = chapter,
 											file = file,
@@ -377,6 +378,7 @@ class DownloadWorker @AssistedInject constructor(
 		url: String,
 		destination: File,
 		source: MangaSource,
+		headers: Map<String, String> = emptyMap(),
 	): File {
 		if (url.startsWith("content:", ignoreCase = true) || url.startsWith("file:", ignoreCase = true)) {
 			val uri = url.toUri()
@@ -397,7 +399,11 @@ class DownloadWorker @AssistedInject constructor(
 			}
 			return file
 		}
-		val request = PageLoader.createPageRequest(url, mapOf(CommonHeaders.MANGA_SOURCE to source.name))
+		val request = PageLoader.createPageRequest(
+			url,
+			// The source tag has to survive: CommonHeadersInterceptor keys the UA and Referer off it.
+			headers + mapOf(CommonHeaders.MANGA_SOURCE to source.name),
+		)
 		slowdownDispatcher.delay(source)
 		return imageProxyInterceptor.interceptPageRequest(request, okHttp)
 			.ensureSuccess()

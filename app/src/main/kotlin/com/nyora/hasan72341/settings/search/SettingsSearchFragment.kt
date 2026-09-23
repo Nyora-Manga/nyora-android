@@ -13,6 +13,7 @@ import com.nyora.hasan72341.core.ui.BaseFragment
 import com.nyora.hasan72341.core.ui.BaseListAdapter
 import com.nyora.hasan72341.core.ui.list.OnListItemClickListener
 import com.nyora.hasan72341.core.util.ext.consumeAll
+import com.nyora.hasan72341.core.util.ext.contentInsetsType
 import com.nyora.hasan72341.core.util.ext.observe
 import com.nyora.hasan72341.databinding.FragmentSearchSuggestionBinding
 import com.nyora.hasan72341.list.ui.adapter.ListItemType
@@ -39,7 +40,7 @@ class SettingsSearchFragment : BaseFragment<FragmentSearchSuggestionBinding>(),
 	}
 
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val type = WindowInsetsCompat.Type.ime() or WindowInsetsCompat.Type.systemBars()
+		val type = WindowInsetsCompat.Type.ime() or contentInsetsType
 		val barsInsets = insets.getInsets(type)
 		v.setPadding(
 			barsInsets.left,

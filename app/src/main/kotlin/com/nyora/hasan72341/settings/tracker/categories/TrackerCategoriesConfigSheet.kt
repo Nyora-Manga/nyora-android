@@ -13,6 +13,7 @@ import com.nyora.hasan72341.core.model.FavouriteCategory
 import com.nyora.hasan72341.core.ui.list.OnListItemClickListener
 import com.nyora.hasan72341.core.ui.sheet.BaseAdaptiveSheet
 import com.nyora.hasan72341.core.util.ext.consume
+import com.nyora.hasan72341.core.util.ext.contentInsetsType
 import com.nyora.hasan72341.core.util.ext.observe
 import com.nyora.hasan72341.databinding.SheetBaseBinding
 
@@ -37,7 +38,7 @@ class TrackerCategoriesConfigSheet :
 	}
 
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val typeMask = WindowInsetsCompat.Type.systemBars()
+		val typeMask = contentInsetsType
 		viewBinding?.recyclerView?.updatePadding(
 			bottom = insets.getInsets(typeMask).bottom,
 		)

@@ -2,6 +2,7 @@ package com.nyora.hasan72341.details.ui
 
 import android.app.assist.AssistContent
 import android.content.Context
+import android.graphics.Rect
 import android.os.Bundle
 import android.text.SpannedString
 import android.view.Gravity
@@ -10,6 +11,8 @@ import android.view.ViewGroup
 import android.view.ViewTreeObserver
 import android.widget.Toast
 import androidx.activity.viewModels
+import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.constraintlayout.widget.ConstraintSet
 import androidx.core.text.buildSpannedString
 import androidx.core.text.inSpans
 import androidx.core.text.method.LinkMovementMethodCompat
@@ -65,8 +68,10 @@ import com.nyora.hasan72341.core.ui.image.TextDrawable
 import com.nyora.hasan72341.core.ui.image.TextViewTarget
 import com.nyora.hasan72341.core.ui.list.OnListItemClickListener
 import com.nyora.hasan72341.core.ui.sheet.BottomSheetCollapseCallback
+import com.nyora.hasan72341.core.ui.util.FoldSupport
 import com.nyora.hasan72341.core.ui.util.MenuInvalidator
 import com.nyora.hasan72341.core.ui.util.ReversibleActionObserver
+import com.nyora.hasan72341.core.ui.util.hingeGuidelineOffset
 import com.nyora.hasan72341.core.ui.widgets.ChipsView
 import com.nyora.hasan72341.core.util.FileSize
 import com.nyora.hasan72341.core.util.LocaleUtils
@@ -114,6 +119,7 @@ import com.nyora.hasan72341.scrobbling.common.domain.model.ScrobblingInfo
 import javax.inject.Inject
 import kotlin.math.roundToInt
 import com.google.android.material.R as materialR
+import com.nyora.hasan72341.core.util.ext.contentInsetsType
 
 @AndroidEntryPoint
 class DetailsActivity :
@@ -139,6 +145,8 @@ class DetailsActivity :
 	private val viewModel: DetailsViewModel by viewModels()
 	private lateinit var menuProvider: DetailsMenuProvider
 	private lateinit var infoBinding: LayoutDetailsTableBinding
+	private val foldSupport = FoldSupport(this)
+	private var appliedHinge: HingeConstraint? = null
 
 	override val bottomSheet: View?
 		get() = viewBinding.containerBottomSheet
@@ -181,6 +189,14 @@ class DetailsActivity :
 			BottomSheetBehavior.from(sheet).addBottomSheetCallback(
 				DetailsBottomSheetCallback(viewBinding.swipeRefreshLayout, checkNotNull(viewBinding.navbarDim)),
 			)
+		}
+
+		if (viewBinding.cardChapters != null) {
+			foldSupport.start()
+			foldSupport.fold.observe(this) { applyFoldPosture() }
+			viewBinding.root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+				applyFoldPosture()
+			}
 		}
 
 		val appRouter = router
@@ -347,7 +363,7 @@ class DetailsActivity :
 	}
 
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val typeMask = WindowInsetsCompat.Type.systemBars()
+		val typeMask = contentInsetsType
 		val barsInsets = insets.getInsets(typeMask)
 		if (viewBinding.cardChapters != null) {
 			// landscape
@@ -371,6 +387,51 @@ class DetailsActivity :
 			return insets
 		}
 	}
+
+	/**
+	 * In book posture the chapters card starts at the far edge of the hinge, so the two panes land
+	 * on the two halves of the screen instead of crossing the fold.
+	 */
+	private fun applyFoldPosture() {
+		if (viewBinding.cardChapters == null || viewBinding.guidelineHinge == null) {
+			return
+		}
+		val root = viewBinding.root as? ConstraintLayout ?: return
+		val hinge = if (foldSupport.isBook) foldSupport.hingeBoundsIn(root) else null
+		// the resolved guideline position depends on the layout direction and the root width as well
+		// as on the hinge, so all three make up the key that skips a redundant re-apply
+		val state = HingeConstraint(hinge, root.width, root.layoutDirection)
+		if (state == appliedHinge) {
+			return
+		}
+		appliedHinge = state
+		val constraints = ConstraintSet()
+		constraints.clone(root)
+		if (hinge == null) {
+			constraints.connect(R.id.card_chapters, ConstraintSet.START, R.id.appbar, ConstraintSet.END)
+		} else {
+			// card_chapters is pinned to the parent end, so it takes the half past the hinge in
+			// layout order: the right half in LTR, the left half in RTL. A vertical guideline is
+			// mirrored in RTL, where guide_end is what is measured from the left edge, so the same
+			// offset goes to setGuidelineBegin in LTR and to setGuidelineEnd in RTL.
+			val isRtl = root.layoutDirection == View.LAYOUT_DIRECTION_RTL
+			val offset = hingeGuidelineOffset(hinge.left, hinge.right, isRtl)
+			if (isRtl) {
+				constraints.setGuidelineEnd(R.id.guideline_hinge, offset)
+			} else {
+				constraints.setGuidelineBegin(R.id.guideline_hinge, offset)
+			}
+			constraints.connect(R.id.card_chapters, ConstraintSet.START, R.id.guideline_hinge, ConstraintSet.END)
+		}
+		constraints.applyTo(root)
+	}
+
+	/** Everything the chapters-card constraint is derived from, cached to skip redundant re-applies. */
+	private data class HingeConstraint(
+		val hinge: Rect?,
+		val rootWidth: Int,
+		val layoutDirection: Int,
+	)
 
 	private fun onFavoritesChanged(categories: Set<FavouriteCategory>) {
 		val chip = viewBinding.chipFavorite

@@ -3,8 +3,7 @@ package com.nyora.hasan72341.sync.supabase
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
+import com.nyora.hasan72341.core.prefs.SecurePreferences
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -17,17 +16,7 @@ class SupabaseConfig @Inject constructor(
 		const val INITIAL_SYNC_TIMESTAMP = "1970-01-01T00:00:00Z"
 	}
 
-	private val masterKey = MasterKey.Builder(context)
-		.setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-		.build()
-
-	private val prefs: SharedPreferences = EncryptedSharedPreferences.create(
-		context,
-		"supabase_secure_prefs",
-		masterKey,
-		EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-		EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-	)
+	private val prefs: SharedPreferences = SecurePreferences.open(context, "supabase_secure_prefs")
 
 	var url: String = ""
 	var anonKey: String = ""

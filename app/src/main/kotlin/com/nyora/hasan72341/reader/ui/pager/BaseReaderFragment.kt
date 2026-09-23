@@ -69,6 +69,12 @@ abstract class BaseReaderFragment<B : ViewBinding> : BaseFragment<B>(), ZoomCont
 		return context?.isAnimationsEnabled == true && viewModel.pageAnimation.value != ReaderAnimation.NONE
 	}
 
+	/**
+	 * Width, in pixels, to keep clear at the gutter of a spread so that a hinge does not cover
+	 * page content. Readers that show a single page at a time ignore it.
+	 */
+	open fun setSpineOffset(px: Int) = Unit
+
 	abstract fun switchPageBy(delta: Int)
 
 	abstract fun switchPageTo(position: Int, smooth: Boolean)

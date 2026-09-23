@@ -4,17 +4,19 @@ import android.content.Context
 import androidx.annotation.AnyThread
 import androidx.collection.ArrayMap
 import dagger.hilt.android.qualifiers.ApplicationContext
-import okhttp3.OkHttpClient
 import com.nyora.hasan72341.core.cache.MemoryContentCache
-import com.nyora.hasan72341.core.network.MangaHttpClient
 import com.nyora.hasan72341.core.model.DataDrivenMangaSource
 import com.nyora.hasan72341.core.model.LocalMangaSource
 import com.nyora.hasan72341.core.model.MangaSourceInfo
 import com.nyora.hasan72341.core.model.TestMangaSource
 import com.nyora.hasan72341.core.model.UnknownMangaSource
+import com.nyora.hasan72341.core.network.MangaHttpClient
+import com.nyora.hasan72341.core.parser.datadriven.DataDrivenCatalogue
+import com.nyora.hasan72341.core.parser.datadriven.findCanonical
 import com.nyora.hasan72341.core.prefs.SourceSettings
 import com.nyora.hasan72341.local.data.LocalMangaRepository
 import com.nyora.hasan72341.mihon.parsers.MangaLoaderContext
+import com.nyora.hasan72341.mihon.parsers.config.ConfigKey
 import com.nyora.hasan72341.mihon.parsers.model.Manga
 import com.nyora.hasan72341.mihon.parsers.model.MangaChapter
 import com.nyora.hasan72341.mihon.parsers.model.MangaListFilter
@@ -24,19 +26,10 @@ import com.nyora.hasan72341.mihon.parsers.model.MangaPage
 import com.nyora.hasan72341.mihon.parsers.model.MangaParserSource
 import com.nyora.hasan72341.mihon.parsers.model.MangaSource
 import com.nyora.hasan72341.mihon.parsers.model.SortOrder
+import okhttp3.OkHttpClient
 import java.lang.ref.WeakReference
 import javax.inject.Inject
 import javax.inject.Singleton
-
-/**
- * A repository that knows the live domain of its source. [CommonHeadersInterceptor] uses it to
- * derive the Referer, which several image CDNs (2xstorage.com et al.) hotlink-check — a native
- * repository that doesn't advertise its domain silently gets 403s on every cover.
- */
-interface DomainAwareRepository {
-
-	val domain: String
-}
 
 interface MangaRepository {
 
@@ -55,6 +48,13 @@ interface MangaRepository {
 	suspend fun getPages(chapter: MangaChapter): List<MangaPage>
 
 	suspend fun getPageUrl(page: MangaPage): String
+
+	/**
+	 * The full image request for [page]: its url plus every header the source needs to serve it.
+	 * Sources that need nothing beyond the page's own headers use this default.
+	 */
+	suspend fun getPageRequest(page: MangaPage): MangaPageRequest =
+		MangaPageRequest(url = getPageUrl(page), headers = page.headers)
 
 	suspend fun getFilterOptions(): MangaListFilterOptions
 
@@ -79,6 +79,7 @@ interface MangaRepository {
 		private val loaderContext: MangaLoaderContext,
 		private val contentCache: MemoryContentCache,
 		private val mirrorSwitcher: MirrorSwitcher,
+		private val dataDrivenCatalogue: DataDrivenCatalogue,
 		@MangaHttpClient private val okHttpClient: OkHttpClient,
 	) {
 
@@ -110,61 +111,76 @@ interface MangaRepository {
 				cache = contentCache,
 			)
 
-			// MangaFire moved to a new JSON API the bundled kotatsu parser can't read; back the
-			// MANGAFIRE_* enum entries with the native repository instead. Must precede the
-			// generic MangaParserSource branch below.
-			is MangaParserSource if source.name.startsWith("MANGAFIRE") -> MangaFireMangaRepository(
+			is DataDrivenMangaSource -> createDataDrivenRepository(source)
+
+			else -> {
+				if (source.name.startsWith(DataDrivenMangaSource.PREFIX)) {
+					// A row persisted before a rename or retirement arrives here as an anonymous
+					// source; the same canonicalisation the source factory applies finds its entry.
+					dataDrivenCatalogue.findCanonical(source.name)?.let {
+						return createDataDrivenRepository(it)
+					}
+				}
+				null
+			}
+		}
+
+		/**
+		 * A handful of sites need more than catalogue data: a request signature, a protobuf decoder
+		 * or an API the generic engines cannot describe. Those rows are routed to a native adapter
+		 * here, and everything else runs on the engine its `engineKey` names.
+		 */
+		private fun createDataDrivenRepository(source: DataDrivenMangaSource): MangaRepository = when {
+			source.engineKey == MangaFireMangaRepository.ENGINE_KEY -> MangaFireMangaRepository(
 				source = source,
 				okHttpClient = okHttpClient,
 				cache = contentCache,
 			)
 
-			// Toonily.me → toondex.io (MangaBuddy JSON API); kotatsu Madtheme parser no longer matches.
-			is MangaParserSource if source.name == "TOONILY_ME" -> ToonDexMangaRepository(
+			source.engineKey == MangaPlusMangaRepository.ENGINE_KEY -> MangaPlusMangaRepository(
 				source = source,
 				okHttpClient = okHttpClient,
 				cache = contentCache,
 			)
 
-			is MangaParserSource -> ParserMangaRepository(
-				parser = loaderContext.newParserInstance(source),
-				mirrorSwitcher = mirrorSwitcher,
+			source.name in NatoMangaRepository.SOURCE_NAMES -> NatoMangaRepository(
+				source = source,
+				okHttpClient = okHttpClient,
 				cache = contentCache,
+				domainOverride = domainOverride(source),
 			)
 
-			// MangaFire and ToonDex use custom JSON APIs a generic engine can't express; route their
-			// data-driven rows to the native repositories. Must precede the generic branch below.
-			is DataDrivenMangaSource if source.engineKey == "mangafire" -> MangaFireMangaRepository(
+			source.name in ToonDexMangaRepository.SOURCE_NAMES -> ToonDexMangaRepository(
 				source = source,
 				okHttpClient = okHttpClient,
 				cache = contentCache,
 			)
 
-			is DataDrivenMangaSource if source.sourceId == "TOONILY_ME" -> ToonDexMangaRepository(
+			else -> DataDrivenMangaRepository(
 				source = source,
 				okHttpClient = okHttpClient,
 				cache = contentCache,
+				domainOverride = domainOverride(source),
 			)
+		}
 
-			// MangaNato/Mangakakalot/MangaNelo are one deployment whose chapter list moved to a
-			// JSON API and whose browse grid the generic mangabox engine mis-reads (it latches
-			// onto the page's hero slider). Served natively, matching nyora-shared.
-			is DataDrivenMangaSource if source.sourceId in NatoMangaRepository.SOURCE_IDS ->
-				NatoMangaRepository(
-					source = source,
-					okHttpClient = okHttpClient,
-					cache = contentCache,
-					settings = SourceSettings(context, source),
-				)
-
-			// Rendered at runtime by a bundled generic engine.
-			is DataDrivenMangaSource -> DataDrivenMangaRepository(
-				ddSource = source,
-				okHttpClient = okHttpClient,
-				settings = SourceSettings(context, source),
-			)
-
-			else -> null
+		/** The user's per-source domain, or null while they are still on the catalogue's. */
+		private fun domainOverride(source: DataDrivenMangaSource): () -> String? {
+			val settings = SourceSettings(context, source)
+			val domainKey = ConfigKey.Domain(source.domain)
+			return { settings[domainKey].takeIf { it != source.domain } }
 		}
 	}
 }
+
+/** A repository whose source has an effective domain, which page and cover requests take a Referer from. */
+interface DomainAwareRepository {
+
+	val domain: String
+}
+
+/** An image request for one manga page: the resolved url plus the headers the source serves it under. */
+data class MangaPageRequest(
+	val url: String,
+	val headers: Map<String, String> = emptyMap(),
+)

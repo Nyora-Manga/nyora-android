@@ -29,7 +29,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.FileNotFoundException
-import java.util.zip.ZipOutputStream
 import javax.inject.Inject
 import androidx.appcompat.R as appcompatR
 
@@ -63,7 +62,7 @@ class BackupService : BaseBackupRestoreService() {
 				null
 			}
 			try {
-				ZipOutputStream(contentResolver.openOutputStream(destination)).use { output ->
+				checkNotNull(contentResolver.openOutputStream(destination)).use { output ->
 					repository.createBackup(output, progress)
 				}
 			} catch (e: Throwable) {

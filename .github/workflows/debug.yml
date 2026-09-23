@@ -19,6 +19,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Check out the data-driven sources
+        run: .github/scripts/init-data-submodule.sh
+
       - name: Setup Java
         uses: actions/setup-java@v4
         with:

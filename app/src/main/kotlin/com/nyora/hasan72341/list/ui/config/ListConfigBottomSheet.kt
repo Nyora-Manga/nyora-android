@@ -18,6 +18,7 @@ import com.nyora.hasan72341.R
 import com.nyora.hasan72341.core.prefs.ListMode
 import com.nyora.hasan72341.core.ui.sheet.BaseAdaptiveSheet
 import com.nyora.hasan72341.core.util.ext.consume
+import com.nyora.hasan72341.core.util.ext.contentInsetsType
 import com.nyora.hasan72341.core.util.ext.setValueRounded
 import com.nyora.hasan72341.core.util.progress.IntPercentLabelFormatter
 import com.nyora.hasan72341.databinding.SheetListModeBinding
@@ -77,7 +78,7 @@ class ListConfigBottomSheet :
 	}
 
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val typeMask = WindowInsetsCompat.Type.systemBars()
+		val typeMask = contentInsetsType
 		viewBinding?.scrollView?.updatePadding(
 			bottom = insets.getInsets(typeMask).bottom,
 		)

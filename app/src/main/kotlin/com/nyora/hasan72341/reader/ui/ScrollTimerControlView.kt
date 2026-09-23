@@ -21,6 +21,7 @@ import com.nyora.hasan72341.R
 import com.nyora.hasan72341.core.prefs.AppSettings
 import com.nyora.hasan72341.core.prefs.ReaderMode
 import com.nyora.hasan72341.core.prefs.observeAsStateFlow
+import com.nyora.hasan72341.core.ui.util.windowSizeClasses
 import com.nyora.hasan72341.core.util.ext.isAnimationsEnabled
 import com.nyora.hasan72341.core.util.ext.observe
 import com.nyora.hasan72341.core.util.ext.parentView
@@ -53,7 +54,7 @@ class ScrollTimerControlView @JvmOverloads constructor(
 		binding.buttonFab.setOnClickListener(this)
 		binding.sliderTimer.setLabelFormatter(this)
 		binding.buttonClose.setOnClickListener(this)
-		binding.buttonFab.isGone = resources.getBoolean(R.bool.is_tablet)
+		binding.buttonFab.isGone = windowSizeClasses.isAtLeastMediumWidth
 		setPadding(0, 0, 0, context.resources.getDimensionPixelOffset(R.dimen.margin_normal))
 	}
 

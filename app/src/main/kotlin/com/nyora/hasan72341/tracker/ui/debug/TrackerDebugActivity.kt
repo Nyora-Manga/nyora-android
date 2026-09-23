@@ -10,9 +10,9 @@ import com.nyora.hasan72341.core.nav.router
 import com.nyora.hasan72341.core.ui.BaseActivity
 import com.nyora.hasan72341.core.ui.BaseListAdapter
 import com.nyora.hasan72341.core.ui.list.OnListItemClickListener
-import com.nyora.hasan72341.core.util.ext.consumeAllSystemBarsInsets
+import com.nyora.hasan72341.core.util.ext.consumeAllContentInsets
 import com.nyora.hasan72341.core.util.ext.observe
-import com.nyora.hasan72341.core.util.ext.systemBarsInsets
+import com.nyora.hasan72341.core.util.ext.contentInsets
 import com.nyora.hasan72341.databinding.ActivityTrackerDebugBinding
 import com.nyora.hasan72341.list.ui.adapter.ListItemType
 import com.nyora.hasan72341.list.ui.adapter.TypedListSpacingDecoration
@@ -37,7 +37,7 @@ class TrackerDebugActivity : BaseActivity<ActivityTrackerDebugBinding>(), OnList
 	}
 
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val barsInsets = insets.systemBarsInsets
+		val barsInsets = insets.contentInsets
 		viewBinding.recyclerView.updatePadding(
 			left = barsInsets.left,
 			right = barsInsets.right,
@@ -48,7 +48,7 @@ class TrackerDebugActivity : BaseActivity<ActivityTrackerDebugBinding>(), OnList
 			right = barsInsets.right,
 			top = barsInsets.top,
 		)
-		return insets.consumeAllSystemBarsInsets()
+		return insets.consumeAllContentInsets()
 	}
 
 	override fun onItemClick(item: TrackDebugItem, view: View) {

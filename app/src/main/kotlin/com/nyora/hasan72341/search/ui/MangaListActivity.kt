@@ -31,7 +31,7 @@ import com.nyora.hasan72341.core.ui.BaseActivity
 import com.nyora.hasan72341.core.ui.model.titleRes
 import com.nyora.hasan72341.core.ui.util.FadingAppbarMediator
 import com.nyora.hasan72341.core.util.ViewBadge
-import com.nyora.hasan72341.core.util.ext.consumeSystemBarsInsets
+import com.nyora.hasan72341.core.util.ext.consumeContentInsets
 import com.nyora.hasan72341.core.util.ext.end
 import com.nyora.hasan72341.core.util.ext.getParcelableExtraCompat
 import com.nyora.hasan72341.core.util.ext.getSerializableExtraCompat
@@ -53,6 +53,7 @@ import com.nyora.hasan72341.mihon.parsers.model.SortOrder
 import com.nyora.hasan72341.remotelist.ui.RemoteListFragment
 import kotlin.math.absoluteValue
 import com.google.android.material.R as materialR
+import com.nyora.hasan72341.core.util.ext.contentInsetsType
 
 @AndroidEntryPoint
 class MangaListActivity :
@@ -104,7 +105,7 @@ class MangaListActivity :
 	 * Only for landscape
 	 */
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val barsInsets = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+		val barsInsets = insets.getInsets(contentInsetsType)
 		viewBinding.cardSide?.updateLayoutParams<ViewGroup.MarginLayoutParams> {
 			marginEnd = barsInsets.end(v) + resources.getDimensionPixelOffset(R.dimen.side_card_offset)
 			topMargin = barsInsets.top + resources.getDimensionPixelOffset(R.dimen.grid_spacing_outer_double)
@@ -115,7 +116,7 @@ class MangaListActivity :
 			end = if (viewBinding.cardSide == null) barsInsets.end(v) else 0,
 			start = barsInsets.start(v),
 		)
-		return insets.consumeSystemBarsInsets(v, top = true, end = true)
+		return insets.consumeContentInsets(v, top = true, end = true)
 	}
 
 	override fun onClick(v: View) {

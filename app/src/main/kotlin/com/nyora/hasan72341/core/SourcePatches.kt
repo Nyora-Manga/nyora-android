@@ -7,10 +7,9 @@ package com.nyora.hasan72341.core
 // DOMAIN_OVERRIDES: relocated/rebranded sources -> current live domain (ConfigKey.Domain).
 // TITLE_OVERRIDES:  display renames that came with a domain move.
 // DEAD_SOURCES:     domain dead with no working successor; hidden from the catalogue.
-// Keyed by the upstream MangaParserSource.name.
+// Keys are upstream MangaParserSource names or DD_<catalogue row id>.
 object SourcePatches {
     val DOMAIN_OVERRIDES: Map<String, String> = mapOf(
-        "AINZSCANS" to "ainzscans.net",
         "ALTAYSCANS" to "witchscans.com",
         "ASTRASCANS" to "astracomic.com",
         "DD_mangabat" to "www.mangabats.com",
@@ -32,9 +31,10 @@ object SourcePatches {
 
     val TITLE_OVERRIDES: Map<String, String> = mapOf(
         "ASTRASCANS" to "Astra Comic",
+        "BEEHENTAI" to "ToonTop",
         "ISEKAISCAN_EU" to "IsekaiScan",
         "MANGATILKISI" to "Tilki Scans",
-        "TOONILY_ME" to "ToonDex",
+        "TOONILY_ME" to "ToonTop (ToonDex)",
         "YUGEN_MANGAS_ES" to "Visual Ikigai",
     )
 
@@ -65,12 +65,13 @@ object SourcePatches {
         "COMIZ",
         "COSMIC_SCANS",
         "CULTURESUBS",
+        "DD_comic1000",
+        "DD_tumanhwas",
         "DECCALSCANS",
         "DEMONSECT",
         "DISKUSSCAN",
         "DOUJINDESURIP",
         "DOUJINS",
-        "DOUJINSHELL",
         "DRAGONMANGA",
         "DREAMSCAN",
         "EDSCANLATION",
@@ -97,7 +98,6 @@ object SourcePatches {
         "HANGTRUYEN",
         "HENSEKAI",
         "HENTAI18VN",
-        "HENTAITECA",
         "HENTAIVN",
         "HENTAIVNBUZZ",
         "HENTAIZ",
@@ -120,6 +120,7 @@ object SourcePatches {
         "KORELISCANS",
         "KUMASCANS",
         "LADYESTELARSCAN",
+        "LAVINIAFANSUB",
         "LECTORUNM",
         "LEGENDSCANLATIONS",
         "LERMANGAONLINE",
@@ -153,7 +154,6 @@ object SourcePatches {
         "MANGAONELOVE",
         "MANGAONLINETEAM",
         "MANGAOWLBLOG",
-        "MANGAOWL_ONE",
         "MANGAREADCO",
         "MANGAROSE",
         "MANGARUBY",
@@ -199,15 +199,18 @@ object SourcePatches {
         "NOVELMIC",
         "NOVELSTOWN",
         "NVMANGA",
+        "NYXSCANS",
         "OIOIVN",
         "OTAKUSAN_EN",
         "OTAKUSAN_VI",
+        "PERF_SCAN",
         "PIEDPIPERFANSUB",
         "PONYMANGA",
         "POPSMANGA",
         "PROJETOSCANLATOR",
         "PRUNUSSCANS",
         "PUSSYSUSSYTOONS",
+        "QISCANS",
         "RAIKISCAN",
         "RAINBOWFAIRYSCAN",
         "RAMAREADER",
@@ -246,6 +249,7 @@ object SourcePatches {
         "TERRITORIOLEAL",
         "TIMENAIGHT",
         "TMOMANGA",
+        "TONIZUTOON",
         "TRADUCCIONESAMISTOSAS",
         "TRUYENHENTAI18",
         "TUMANGAONLINE",
@@ -276,9 +280,15 @@ object SourcePatches {
         "ZENITHSCANS",
         "ZEVEP",
         "ZINCHANMANGA_NET",
+        "ZINMANGA",
         "ZINMANGA_CC",
         "ZINMANGA_MS",
         "ZIN_MANGA_COM",
-        "ZSCANLATION",
+        "asialotuss",
+        "doctruyen5s",
+        "klz9",
+        "olimposcans",
+        "ulascomic",
+        "umimanga",
     )
 }

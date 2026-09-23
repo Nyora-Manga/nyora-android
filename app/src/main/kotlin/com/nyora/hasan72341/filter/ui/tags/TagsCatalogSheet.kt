@@ -19,6 +19,7 @@ import com.nyora.hasan72341.core.ui.sheet.AdaptiveSheetCallback
 import com.nyora.hasan72341.core.ui.sheet.BaseAdaptiveSheet
 import com.nyora.hasan72341.core.ui.util.DefaultTextWatcher
 import com.nyora.hasan72341.core.util.ext.consumeAll
+import com.nyora.hasan72341.core.util.ext.contentInsetsType
 import com.nyora.hasan72341.core.util.ext.observe
 import com.nyora.hasan72341.databinding.SheetTagsBinding
 import com.nyora.hasan72341.filter.ui.FilterCoordinator
@@ -62,7 +63,7 @@ class TagsCatalogSheet : BaseAdaptiveSheet<SheetTagsBinding>(),
 	}
 
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val typeBask = WindowInsetsCompat.Type.systemBars()
+		val typeBask = contentInsetsType
 		val barsInsets = insets.getInsets(typeBask)
 		viewBinding?.recyclerView?.setPadding(
 			barsInsets.left,

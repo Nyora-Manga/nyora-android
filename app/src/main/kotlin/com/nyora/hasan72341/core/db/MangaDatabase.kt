@@ -6,6 +6,10 @@ import androidx.room.InvalidationTracker
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
+import com.nyora.hasan72341.backups.data.NyoraBackupLedgerDao
+import com.nyora.hasan72341.backups.data.NyoraBackupLedgerEntity
+import com.nyora.hasan72341.backups.data.NyoraBackupIdentityMapDao
+import com.nyora.hasan72341.backups.data.NyoraBackupIdentityMapEntity
 import com.nyora.hasan72341.bookmarks.data.BookmarkEntity
 import com.nyora.hasan72341.bookmarks.data.BookmarksDao
 import com.nyora.hasan72341.core.db.dao.ExternalExtensionRepoDao
@@ -41,6 +45,8 @@ import com.nyora.hasan72341.core.db.migrations.Migration28To29
 import com.nyora.hasan72341.core.db.migrations.Migration29To30
 import com.nyora.hasan72341.core.db.migrations.Migration30To31
 import com.nyora.hasan72341.core.db.migrations.Migration31To32
+import com.nyora.hasan72341.core.db.migrations.Migration32To33
+import com.nyora.hasan72341.core.db.migrations.Migration33To34
 import com.nyora.hasan72341.core.db.migrations.Migration2To3
 import com.nyora.hasan72341.core.db.migrations.Migration3To4
 import com.nyora.hasan72341.core.db.migrations.Migration4To5
@@ -72,7 +78,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-const val DATABASE_VERSION = 32
+const val DATABASE_VERSION = 34
 
 @Database(
 	entities = [
@@ -80,6 +86,8 @@ const val DATABASE_VERSION = 32
 		FavouriteCategoryEntity::class, FavouriteEntity::class, MangaPrefsEntity::class, TrackEntity::class,
 		TrackLogEntity::class, SuggestionEntity::class, BookmarkEntity::class, ScrobblingEntity::class,
 		MangaSourceEntity::class, StatsEntity::class, LocalMangaIndexEntity::class, ExternalExtensionRepoEntity::class,
+		NyoraBackupLedgerEntity::class,
+		NyoraBackupIdentityMapEntity::class,
 	],
 	version = DATABASE_VERSION,
 )
@@ -112,6 +120,10 @@ abstract class MangaDatabase : RoomDatabase() {
 	abstract fun getLocalMangaIndexDao(): LocalMangaIndexDao
 
 	abstract fun getExternalExtensionRepoDao(): ExternalExtensionRepoDao
+
+	abstract fun getNyoraBackupLedgerDao(): NyoraBackupLedgerDao
+
+	abstract fun getNyoraBackupIdentityMapDao(): NyoraBackupIdentityMapDao
 }
 
 fun getDatabaseMigrations(context: Context): Array<Migration> = arrayOf(
@@ -147,6 +159,8 @@ fun getDatabaseMigrations(context: Context): Array<Migration> = arrayOf(
 	Migration29To30(),
 	Migration30To31(),
 	Migration31To32(),
+	Migration32To33(),
+	Migration33To34(),
 )
 
 fun MangaDatabase(context: Context): MangaDatabase = Room

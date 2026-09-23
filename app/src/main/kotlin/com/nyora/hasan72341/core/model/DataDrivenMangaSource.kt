@@ -1,113 +1,55 @@
 package com.nyora.hasan72341.core.model
 
+import com.nyora.hasan72341.core.parser.datadriven.legacyParserSourceName
+import com.nyora.hasan72341.mihon.parsers.model.ContentSource
+import com.nyora.hasan72341.mihon.parsers.model.ContentType
 import com.nyora.hasan72341.mihon.parsers.model.MangaSource
+import java.util.Locale
 
 /**
- * A source defined by data, not code: [engineKey] picks a bundled generic engine that renders it from
- * [domain] + [config]. [name] is the persisted identity, prefixed so it can't collide with a native one.
+ * A source defined by catalogue data rather than code: [engineKey] picks a bundled engine that
+ * renders the site from [domain] plus [config].
+ *
+ * [name] is the portable identity every Nyora client persists, so it is always the canonical
+ * lower-cased `data:<id>` form. [catalogueId] keeps the row's original spelling, which the engine
+ * needs for `SourceDef.id` and which the legacy manga-id hash is derived from.
  */
 data class DataDrivenMangaSource(
-    val sourceId: String,
-    val engineKey: String,
-    val title: String,
-    val lang: String,
-    val nsfw: Boolean,
-    val domain: String,
-    // Catalogue content type (MANGA/MANHWA/HENTAI/COMICS/…); null when untagged.
-    val contentType: String? = null,
-    val config: Map<String, Any?> = emptyMap(),
-    /**
-     * Mihon/Keiyoushi source ids that read the SAME site as this source.
-     *
-     * Mihon identifies a source only by a 64-bit id derived from the extension's own name/lang, so
-     * nothing in a Mihon-shaped reference can be translated to a Nyora id by string surgery. The
-     * catalogue therefore ships the correspondence, computed offline by joining the extension repo
-     * indexes against this catalogue on the site each side reads (see nyora-data-driven
-     * tools/build-mihon-bridge.py). Empty for the majority of sources, which have no Mihon twin.
-     */
-    val mihonIds: List<Long> = emptyList(),
-    /**
-     * Catalogue liveness flag. A broken source is kept RESOLVABLE (so an entry that references it
-     * still shows the right source instead of reading as corrupted) but is left out of the
-     * browsable list — identity and browsability are separate concerns, and this flag is a
-     * point-in-time observation that a domain patch or the site itself can reverse.
-     */
-    val broken: Boolean = false,
-) : MangaSource {
+	val catalogueId: String,
+	val engineKey: String,
+	val title: String,
+	override val locale: String,
+	val nsfw: Boolean,
+	/** Host only, with the `SourcePatches` relocation applied. */
+	val domain: String,
+	override val contentType: ContentType,
+	/** The row's `config` object plus the runtime metadata the engines read back out of it. */
+	val config: Map<String, Any?>,
+	val pageSize: Int,
+	val antiBot: String?,
+	/** Cloudflare wall class; `"B"` rows need the WebView solver, which Android has. */
+	val cfWall: String?,
+) : MangaSource, ContentSource {
 
-    override val name: String get() = PREFIX + sourceId
+	override val name: String
+		get() = PREFIX + catalogueId.lowercase(Locale.ROOT)
 
-    companion object {
-        const val PREFIX = "DD_"
+	/** The retired parser enum this row's persisted manga and chapter ids are hashed from. */
+	val legacyParserName: String
+		get() = legacyParserSourceName(catalogueId)
 
-        // Maps "DD_<id>" -> source so persisted names resolve back to the fetched catalogue.
-        // Swapped atomically so a concurrent resolve() never sees a half-populated map.
-        @Volatile
-        private var registry: Map<String, DataDrivenMangaSource> = emptyMap()
+	/**
+	 * Identity is the [name] alone. Source instances are map keys (the repository factory's cache,
+	 * `MemoryContentCache`), and the generated equality would span the whole [config] map, so a
+	 * catalogue refresh that only re-tuned a selector would strand every entry keyed by the old row.
+	 */
+	override fun equals(other: Any?): Boolean =
+		this === other || (other is DataDrivenMangaSource && other.name == name)
 
-        // Reverse index by lower-cased sourceId, for resolving legacy/cross-client NATIVE source ids
-        // (e.g. "parser:MANGADEX", "JS_MANGAFIRE_JA", bare "SUSHISCANFR") that other Nyora clients
-        // sync — the catalogue id often differs only in case (mangadex / SUSHISCANFR / sushiscanfr).
-        @Volatile
-        private var byLowerId: Map<String, DataDrivenMangaSource> = emptyMap()
+	override fun hashCode(): Int = name.hashCode()
 
-        // Mihon source id -> the catalogue source reading the same site. Lets a library imported or
-        // synced from Mihon resolve to a source this app can actually open, instead of Unknown.
-        @Volatile
-        private var byMihonId: Map<Long, DataDrivenMangaSource> = emptyMap()
+	companion object {
 
-        fun isDataDriven(name: String): Boolean = name.startsWith(PREFIX)
-
-        fun register(sources: List<DataDrivenMangaSource>) {
-            registry = sources.associateByTo(HashMap(sources.size)) { it.name }
-            // Last one wins on a case collision; acceptable — these ids are practically unique.
-            byLowerId = sources.associateByTo(HashMap(sources.size)) { it.sourceId.lowercase() }
-            byMihonId = buildMap {
-                for (source in sources) {
-                    // A Mihon id maps to exactly one site, so a collision here means the catalogue
-                    // has two rows claiming it; keep the first so the result stays deterministic
-                    // regardless of catalogue ordering.
-                    for (id in source.mihonIds) putIfAbsent(id, source)
-                }
-            }
-        }
-
-        fun resolve(name: String): DataDrivenMangaSource? = registry[name]
-
-        /**
-         * Resolve a NATIVE/cross-client source id to its data-driven equivalent when the catalogue
-         * has one. Strips the `parser:` / `JS_` / `script:` prefix and matches case-insensitively.
-         * Returns null when no catalogue source corresponds (e.g. a source never ported to DD).
-         */
-        fun resolveNativeId(nativeName: String): DataDrivenMangaSource? {
-            val bare = nativeName
-                .substringAfter("parser:")
-                .removePrefix("JS_")
-                .substringAfter("script:")
-                .trim()
-            if (bare.isEmpty()) return null
-            return byLowerId[bare.lowercase()]
-        }
-
-        /**
-         * Resolve a Mihon/Keiyoushi source id to the catalogue source reading the same site, or
-         * null when the catalogue carries no equivalent.
-         *
-         * This is a FALLBACK, not a redirect: when the user actually has the Mihon extension
-         * installed it is resolved by the extension manager and never reaches here. It only fires
-         * for a reference the app would otherwise have to render as an unknown, broken source —
-         * a library imported from Mihon, synced from another client, or left behind by an
-         * extension that has since been uninstalled.
-         */
-        fun resolveMihonId(mihonId: Long): DataDrivenMangaSource? = byMihonId[mihonId]
-
-        /** As [resolveMihonId], for a persisted `MIHON_<id>` source name. */
-        fun resolveMihonName(name: String): DataDrivenMangaSource? {
-            if (!name.startsWith(MIHON_PREFIX)) return null
-            val id = name.removePrefix(MIHON_PREFIX).toLongOrNull() ?: return null
-            return resolveMihonId(id)
-        }
-
-        const val MIHON_PREFIX = "MIHON_"
-    }
+		const val PREFIX = "data:"
+	}
 }

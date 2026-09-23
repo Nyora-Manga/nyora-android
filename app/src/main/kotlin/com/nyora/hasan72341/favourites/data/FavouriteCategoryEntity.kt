@@ -5,6 +5,10 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.nyora.hasan72341.core.db.TABLE_FAVOURITE_CATEGORIES
 
+const val NYORA_UNCATEGORIZED_PORTABLE_ID = "__nyora_uncategorized__"
+const val NYORA_UNCATEGORIZED_LOCAL_IDS =
+	"SELECT CAST(local_key AS INTEGER) FROM nyora_backup_identity_map WHERE kind = 'category' AND portable_id = '$NYORA_UNCATEGORIZED_PORTABLE_ID'"
+
 @Entity(tableName = TABLE_FAVOURITE_CATEGORIES)
 data class FavouriteCategoryEntity(
 	@PrimaryKey(autoGenerate = true)

@@ -39,7 +39,6 @@
         android:persistent="false"
         android:title="@string/sources_catalog" />
 
-
     <SwitchPreferenceCompat
         android:defaultValue="true"
         android:key="no_nsfw"

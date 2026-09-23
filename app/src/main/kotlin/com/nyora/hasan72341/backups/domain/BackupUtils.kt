@@ -8,7 +8,6 @@ import java.io.File
 import java.text.ParseException
 import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
 
 object BackupUtils {
 
@@ -34,9 +33,6 @@ object BackupUtils {
 	}
 
 	fun generateFileName(context: Context) = buildString {
-		append(context.getString(R.string.app_name).replace(' ', '_').lowercase(Locale.ROOT))
-		append('_')
-		append(dateTimeFormat.format(Date()))
-		append(".bk.zip")
+		append(NyoraBackupFiles.fileName(context.getString(R.string.app_name), dateTimeFormat.format(Date())))
 	}
 }

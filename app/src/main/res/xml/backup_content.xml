@@ -1,16 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
-	<include
-		domain="sharedpref"
-		path="." />
 	<exclude
 		domain="sharedpref"
-		path="_local_index.xml" />
-	<!-- Secrets must not leave the device: session cookies + scrobbler OAuth tokens. -->
-	<exclude domain="sharedpref" path="cookies.xml" />
-	<exclude domain="sharedpref" path="ANILIST.xml" />
-	<exclude domain="sharedpref" path="MAL.xml" />
-	<exclude domain="sharedpref" path="MANGABAKA.xml" />
+		path="." />
 	<exclude domain="database" />
 	<exclude domain="device_database" />
 	<exclude domain="external" />

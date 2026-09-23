@@ -2,6 +2,7 @@ package com.nyora.hasan72341.core.network
 
 import dagger.Lazy
 import com.nyora.hasan72341.core.model.MangaSource
+import com.nyora.hasan72341.core.parser.DomainAwareRepository
 import com.nyora.hasan72341.core.parser.MangaLoaderContextImpl
 import com.nyora.hasan72341.core.parser.MangaRepository
 import com.nyora.hasan72341.core.parser.ParserMangaRepository
@@ -43,10 +44,10 @@ class CommonHeadersInterceptor @Inject constructor(
 			headersBuilder[CommonHeaders.USER_AGENT] = mangaLoaderContextLazy.get().getDefaultUserAgent()
 		}
 		if (headersBuilder[CommonHeaders.REFERER] == null) {
-			// Derive a Referer from the source domain — for native parser sources AND data-driven
-			// sources alike. Manganato et al. gate cover/page images on it.
-			val domain = parserRepository?.domain
-				?: (repository as? com.nyora.hasan72341.core.parser.DomainAwareRepository)?.domain
+			// Derive a Referer from the source domain — native parser sources expose it directly,
+			// every other kind through DomainAwareRepository. Manganato et al. gate images on it.
+			val domain = (parserRepository?.domain ?: (repository as? DomainAwareRepository)?.domain)
+				?.takeUnless { it.isBlank() }
 			if (domain != null) {
 				headersBuilder.trySet(CommonHeaders.REFERER, "https://${IDN.toASCII(domain)}/")
 			}

@@ -28,12 +28,12 @@ import com.nyora.hasan72341.core.ui.list.OnListItemClickListener
 import com.nyora.hasan72341.core.ui.util.PagerNestedScrollHelper
 import com.nyora.hasan72341.core.ui.util.RecyclerViewOwner
 import com.nyora.hasan72341.core.ui.util.ReversibleActionObserver
-import com.nyora.hasan72341.core.util.ext.consumeAllSystemBarsInsets
+import com.nyora.hasan72341.core.util.ext.consumeAllContentInsets
 import com.nyora.hasan72341.core.util.ext.findAppCompatDelegate
 import com.nyora.hasan72341.core.util.ext.findParentCallback
 import com.nyora.hasan72341.core.util.ext.observe
 import com.nyora.hasan72341.core.util.ext.observeEvent
-import com.nyora.hasan72341.core.util.ext.systemBarsInsets
+import com.nyora.hasan72341.core.util.ext.contentInsets
 import com.nyora.hasan72341.databinding.FragmentMangaBookmarksBinding
 import com.nyora.hasan72341.details.ui.pager.ChaptersPagesViewModel
 import com.nyora.hasan72341.list.ui.GridSpanResolver
@@ -117,14 +117,14 @@ class BookmarksFragment : BaseFragment<FragmentMangaBookmarksBinding>(),
 	}
 
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val barsInsets = insets.systemBarsInsets
+		val barsInsets = insets.contentInsets
 		viewBinding?.recyclerView?.setPadding(
 			barsInsets.left,
 			barsInsets.top,
 			barsInsets.right,
 			barsInsets.bottom,
 		)
-		return insets.consumeAllSystemBarsInsets()
+		return insets.consumeAllContentInsets()
 	}
 
 	override fun onDestroyView() {
