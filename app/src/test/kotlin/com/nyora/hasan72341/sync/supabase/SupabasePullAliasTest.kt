@@ -15,6 +15,39 @@ import org.junit.Test
 
 class SupabasePullAliasTest {
 
+    @Test
+    fun `tracking aliases retain newest state and tombstones regardless of backend order`() {
+        fun canonical(id: String) = if (id == "legacy") "canonical" else id
+        fun candidate(row: org.json.JSONObject) = CanonicalAliasCandidate(
+            remoteId = row.getString("manga_id"),
+            canonicalId = canonical(row.getString("manga_id")),
+            updatedAt = row.getLong("updated_at"),
+            deletedAt = row.optLong("deleted_at", 0),
+        )
+        val stale = """{"tracker_id":"anilist","manga_id":"legacy","updated_at":1,"deleted_at":2}"""
+        val active = """{"tracker_id":"anilist","manga_id":"canonical","updated_at":3}"""
+        val deleted = """{"tracker_id":"anilist","manga_id":"legacy","updated_at":1,"deleted_at":4}"""
+        val otherTracker = """{"tracker_id":"myanimelist","manga_id":"legacy","updated_at":1}"""
+        listOf(stale to active, active to deleted).forEach { (older, newer) ->
+            listOf(listOf(older, newer), listOf(newer, older)).forEach { order ->
+                val rows = newestCanonicalTrackingRows(
+                    JSONArray("[${(order + otherTracker).joinToString(",")}]"),
+                    ::canonical,
+                ) { left, right ->
+                    val a = candidate(left)
+                    val b = candidate(right)
+                    a != b && newestCanonicalAlias(listOf(a, b)) == a
+                }
+                assertEquals(2, rows.size)
+                assertEquals(
+                    candidate(org.json.JSONObject(newer)),
+                    candidate(rows.single { it.getString("tracker_id") == "anilist" }),
+                )
+                assertEquals("myanimelist", rows.single { it.getString("tracker_id") == "myanimelist" }.getString("tracker_id"))
+            }
+        }
+    }
+
 	@Test
 	fun `a data source row aliases the remote id to the legacy local id`() {
 		assertEquals(

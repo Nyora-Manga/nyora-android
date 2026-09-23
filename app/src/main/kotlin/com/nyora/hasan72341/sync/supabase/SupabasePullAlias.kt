@@ -7,6 +7,7 @@ import com.nyora.hasan72341.core.model.DataDrivenMangaSource
 import com.nyora.hasan72341.core.parser.datadriven.stableChapterId
 import com.nyora.hasan72341.core.parser.datadriven.stableMangaId
 import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Pure identity helpers for the cloud pull.
@@ -204,3 +205,31 @@ internal fun newestCanonicalSourcePrefs(prefs: List<PulledSourcePref>): List<Pul
 				.thenBy { it.sourceId },
 		)
 	}
+
+/** Collapse remote aliases before applying rows, so stale updates and tombstones cannot win by order. */
+internal fun newestCanonicalJsonRows(
+    rows: JSONArray,
+    key: (JSONObject) -> String,
+    isNewer: (JSONObject, JSONObject) -> Boolean,
+): List<JSONObject> {
+    val winners = linkedMapOf<String, JSONObject>()
+    for (index in 0 until rows.length()) {
+        val candidate = rows.optJSONObject(index) ?: continue
+        // Leave malformed rows for the caller's per-row error handling.
+        val canonicalKey = runCatching { key(candidate) }.getOrElse { "\u0000malformed:$index" }
+        val current = winners[canonicalKey]
+        if (current == null || isNewer(candidate, current)) winners[canonicalKey] = candidate
+    }
+    return winners.values.toList()
+}
+
+/** A tracking link is unique per tracker and canonical manga, including deleted links. */
+internal fun newestCanonicalTrackingRows(
+    rows: JSONArray,
+    canonicalMangaId: (String) -> String,
+    isNewer: (JSONObject, JSONObject) -> Boolean,
+): List<JSONObject> = newestCanonicalJsonRows(
+    rows,
+    { "${it.getString("tracker_id")}|${canonicalMangaId(it.getString("manga_id"))}" },
+    isNewer,
+)

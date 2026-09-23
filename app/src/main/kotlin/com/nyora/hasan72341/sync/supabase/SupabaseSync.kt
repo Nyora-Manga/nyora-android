@@ -344,9 +344,9 @@ class SupabaseSync @Inject constructor(
         ) ?: return
         runCatching {
             val arr = JSONArray(text)
-            for (i in 0 until arr.length()) {
+            val rows = newestCanonicalTrackingRows(arr, ::canonicalPulledMangaId, ::isNewerRemoteRow)
+            for (row in rows) {
                 try {
-                    val row = arr.getJSONObject(i)
                     val dto = SbTracking.fromRow(row)
                     val scrobbler = scrobblerId(dto.trackerId) ?: continue
                     // Older clients wrote server-generated manga ids; the alias map built by
@@ -1115,18 +1115,8 @@ class SupabaseSync @Inject constructor(
      * The rows to apply, with an aliased and an already-canonical row of the same manga collapsed
      * onto the newest of the two. Backend row order is not a conflict policy.
      */
-    private fun newestCanonicalJsonRows(rows: JSONArray, key: (JSONObject) -> String): List<JSONObject> {
-        val winners = linkedMapOf<String, JSONObject>()
-        for (index in 0 until rows.length()) {
-            val candidate = rows.optJSONObject(index) ?: continue
-            // A row missing the columns the key is built from is still handed to the caller, which
-            // logs and skips it per row. Collapsing must never cost more rows than it deduplicates.
-            val canonicalKey = runCatching { key(candidate) }.getOrElse { "\u0000malformed:$index" }
-            val current = winners[canonicalKey]
-            if (current == null || isNewerRemoteRow(candidate, current)) winners[canonicalKey] = candidate
-        }
-        return winners.values.toList()
-    }
+    private fun newestCanonicalJsonRows(rows: JSONArray, key: (JSONObject) -> String): List<JSONObject> =
+        newestCanonicalJsonRows(rows, key, ::isNewerRemoteRow)
 
     private fun isNewerRemoteRow(candidate: JSONObject, incumbent: JSONObject): Boolean {
         val left = aliasCandidate(candidate)
