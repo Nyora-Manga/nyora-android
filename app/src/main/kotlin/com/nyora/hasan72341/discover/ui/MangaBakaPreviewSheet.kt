@@ -53,7 +53,7 @@ class MangaBakaPreviewSheet : BaseAdaptiveSheet<SheetMangabakaPreviewBinding>() 
 		super.onViewBindingCreated(binding, savedInstanceState)
 		val title = arguments?.getString(ARG_TITLE).orEmpty()
 		binding.buttonAddSource.setOnClickListener {
-			router.showAddSourceRepository()
+			router.openSourcesCatalog()
 			dismiss()
 		}
 		load(title)

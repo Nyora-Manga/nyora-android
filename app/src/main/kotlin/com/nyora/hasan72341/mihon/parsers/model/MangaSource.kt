@@ -28,6 +28,14 @@ sealed interface MangaSourceRef {
 		override val name = "UNKNOWN"
 	}
 
+	/** Canonical Nyora data-catalogue source identity used by portable storage. */
+	@Serializable
+	data class Data(override val name: String) : MangaSourceRef {
+		init {
+			require(Regex("data:[a-z0-9][a-z0-9._-]*").matches(name))
+		}
+	}
+
 	/** A native parser source (an entry of [MangaParserSource]). */
 	@Serializable
 	data class Parser(override val name: String) : MangaSourceRef
@@ -36,9 +44,6 @@ sealed interface MangaSourceRef {
 	@Serializable
 	data class Script(override val name: String) : MangaSourceRef
 
-	/** A Mihon ("MIHON_"-prefixed) extension source. */
-	@Serializable
-	data class Mihon(override val name: String, val sourceId: Long) : MangaSourceRef
 }
 
 @Serializable

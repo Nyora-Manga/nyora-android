@@ -5,28 +5,29 @@ import android.app.Notification
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.net.Uri
 import androidx.annotation.CheckResult
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
 import com.nyora.hasan72341.R
 import com.nyora.hasan72341.backups.data.BackupRepository
-import com.nyora.hasan72341.backups.domain.BackupSection
+import com.nyora.hasan72341.backups.data.NyoraRestoreMode
+import com.nyora.hasan72341.backups.domain.NyoraRestoreRequest
+import com.nyora.hasan72341.backups.domain.NyoraRestorePayloadStore
 import com.nyora.hasan72341.backups.ui.BaseBackupRestoreService
 import com.nyora.hasan72341.core.nav.AppRouter
 import com.nyora.hasan72341.core.util.ext.checkNotificationPermission
-import com.nyora.hasan72341.core.util.ext.getSerializableExtraCompat
+import com.nyora.hasan72341.core.util.CompositeResult
 import com.nyora.hasan72341.core.util.ext.powerManager
 import com.nyora.hasan72341.core.util.ext.printStackTraceDebug
-import com.nyora.hasan72341.core.util.ext.toUriOrNull
 import com.nyora.hasan72341.core.util.ext.withPartialWakeLock
 import com.nyora.hasan72341.core.util.progress.Progress
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import java.io.FileNotFoundException
-import java.util.zip.ZipInputStream
+import java.io.File
+import android.net.Uri
 import javax.inject.Inject
 import androidx.appcompat.R as appcompatR
 
@@ -47,9 +48,9 @@ class RestoreService : BaseBackupRestoreService() {
 			notification,
 			ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
 		)
-		val source = intent.getStringExtra(AppRouter.KEY_DATA)?.toUriOrNull() ?: throw FileNotFoundException()
-		val sections =
-			requireNotNull(intent.getSerializableExtraCompat<Array<BackupSection>>(AppRouter.KEY_ENTRIES)?.toSet())
+		val payload = intent.getStringExtra(AppRouter.KEY_DATA)?.let(::File) ?: throw FileNotFoundException()
+		val mode = requireNotNull(NyoraRestoreMode.parse(intent.getStringExtra(EXTRA_MODE)))
+		val request = NyoraRestoreRequest(mode, intent.getBooleanExtra(EXTRA_REPLACE_CONFIRMED, false))
 		powerManager.withPartialWakeLock(TAG) {
 			val progress = MutableStateFlow(Progress.INDETERMINATE)
 			val progressUpdateJob = if (checkNotificationPermission(CHANNEL_ID)) {
@@ -61,11 +62,12 @@ class RestoreService : BaseBackupRestoreService() {
 			} else {
 				null
 			}
-			val result = ZipInputStream(contentResolver.openInputStream(source)).use { input ->
-				repository.restoreBackup(input, sections, progress)
+			val payloadStore = NyoraRestorePayloadStore(File(cacheDir, RestoreViewModel.RESTORE_PAYLOAD_DIRECTORY))
+			payloadStore.consume(payload).inputStream().use { input ->
+				repository.restoreBackup(input, request, progress)
 			}
 			progressUpdateJob?.cancelAndJoin()
-			showResultNotification(source, result)
+			showResultNotification(Uri.fromFile(payload), CompositeResult.success())
 		}
 	}
 
@@ -102,12 +104,15 @@ class RestoreService : BaseBackupRestoreService() {
 
 		private const val TAG = "RESTORE"
 		private const val FOREGROUND_NOTIFICATION_ID = 39
+		private const val EXTRA_MODE = "nyora_restore_mode"
+		private const val EXTRA_REPLACE_CONFIRMED = "nyora_restore_replace_confirmed"
 
 		@CheckResult
-		fun start(context: Context, uri: Uri, sections: Set<BackupSection>): Boolean = try {
+		fun start(context: Context, payload: File, request: NyoraRestoreRequest = NyoraRestoreRequest()): Boolean = try {
 			val intent = Intent(context, RestoreService::class.java)
-			intent.putExtra(AppRouter.KEY_DATA, uri.toString())
-			intent.putExtra(AppRouter.KEY_ENTRIES, sections.toTypedArray())
+			intent.putExtra(AppRouter.KEY_DATA, payload.absolutePath)
+			intent.putExtra(EXTRA_MODE, request.mode.name.lowercase())
+			intent.putExtra(EXTRA_REPLACE_CONFIRMED, request.replaceConfirmed)
 			ContextCompat.startForegroundService(context, intent)
 			true
 		} catch (e: Exception) {

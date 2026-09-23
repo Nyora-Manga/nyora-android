@@ -14,6 +14,8 @@ import com.nyora.hasan72341.core.db.entity.MangaEntity
 
 @Dao
 abstract class BookmarksDao {
+	@Query("SELECT * FROM bookmarks ORDER BY manga_id, page_id")
+	abstract suspend fun findAllForBackup(): List<BookmarkEntity>
 
 	@Query("SELECT * FROM bookmarks WHERE page_id = :pageId AND deleted_at = 0")
 	abstract suspend fun find(pageId: String): BookmarkEntity?

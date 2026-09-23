@@ -19,18 +19,32 @@
 		android:visibility="gone"
 		tools:visibility="visible" />
 
-	<androidx.recyclerview.widget.RecyclerView
-		android:id="@+id/recyclerView"
-		android:layout_width="match_parent"
-		android:layout_height="0dp"
-		android:layout_weight="1"
-		android:orientation="vertical"
-		android:scrollIndicators="top|bottom"
-		android:visibility="gone"
-		app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
-		tools:itemCount="6"
-		tools:listitem="@layout/item_checkable_multiple"
-		tools:visibility="visible" />
+	<com.google.android.material.button.MaterialButtonToggleGroup
+		android:id="@+id/restoreModeGroup"
+		android:layout_width="wrap_content"
+		android:layout_height="wrap_content"
+		android:layout_gravity="center_horizontal"
+		android:layout_marginHorizontal="?dialogPreferredPadding"
+		android:layout_marginBottom="@dimen/margin_small"
+		app:checkedButton="@id/button_merge"
+		app:selectionRequired="true"
+		app:singleSelection="true">
+
+		<Button
+			android:id="@+id/button_merge"
+			style="?attr/materialButtonOutlinedStyle"
+			android:layout_width="wrap_content"
+			android:layout_height="wrap_content"
+			android:text="@string/backup_restore_merge" />
+
+		<Button
+			android:id="@+id/button_replace"
+			style="?attr/materialButtonOutlinedStyle"
+			android:layout_width="wrap_content"
+			android:layout_height="wrap_content"
+			android:text="@string/backup_restore_replace" />
+
+	</com.google.android.material.button.MaterialButtonToggleGroup>
 
 	<TextView
 		android:id="@+id/textView_subtitle"

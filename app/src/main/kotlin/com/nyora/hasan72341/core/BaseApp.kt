@@ -11,12 +11,14 @@ import androidx.work.Configuration
 import dagger.hilt.android.HiltAndroidApp
 import com.nyora.hasan72341.core.db.MangaDatabase
 import com.nyora.hasan72341.core.os.AppValidator
+import com.nyora.hasan72341.core.parser.datadriven.CatalogueRefreshWorker
+import com.nyora.hasan72341.core.parser.datadriven.DataDrivenCatalogue
 import com.nyora.hasan72341.core.prefs.AppSettings
+import com.nyora.hasan72341.core.prefs.SourceSettings
 import com.nyora.hasan72341.core.util.ext.processLifecycleScope
 import com.nyora.hasan72341.local.data.LocalStorageChanges
 import com.nyora.hasan72341.local.data.index.LocalMangaIndex
 import com.nyora.hasan72341.local.domain.model.LocalManga
-import com.nyora.hasan72341.mihon.MihonExtensionManager
 import com.nyora.hasan72341.settings.work.WorkScheduleManager
 import com.nyora.hasan72341.sync.supabase.SupabaseConfig
 import kotlinx.coroutines.Dispatchers
@@ -30,9 +32,6 @@ import javax.inject.Provider
 
 @HiltAndroidApp
 open class BaseApp : Application(), Configuration.Provider {
-
-	@Inject
-	lateinit var mihonExtensionManager: MihonExtensionManager
 
 	@Inject
 	lateinit var databaseObserversProvider: Provider<Set<@JvmSuppressWildcards InvalidationTracker.Observer>>
@@ -66,10 +65,7 @@ open class BaseApp : Application(), Configuration.Provider {
 	lateinit var supabaseConfig: SupabaseConfig
 
 	@Inject
-	lateinit var dataDrivenCatalogue: com.nyora.hasan72341.core.parser.datadriven.DataDrivenCatalogueRepository
-
-	@Inject
-	lateinit var mangaSourcesRepository: com.nyora.hasan72341.explore.data.MangaSourcesRepository
+	lateinit var dataDrivenCatalogue: DataDrivenCatalogue
 
 	override val workManagerConfiguration: Configuration
 		get() = Configuration.Builder()
@@ -78,9 +74,6 @@ open class BaseApp : Application(), Configuration.Provider {
 
 	override fun onCreate() {
 		super.onCreate()
-		// Load the obfuscated-domain table before any parser resolves its domain (release builds
-		// have their domain constants rewritten to DomainVault.d(index); see buildSrc).
-		com.nyora.hasan72341.core.vault.DomainVault.init(this)
 		PlatformRegistry.applicationContext = this // TODO replace with OkHttp.initialize
 		AppCompatDelegate.setDefaultNightMode(settings.theme)
 		
@@ -88,30 +81,40 @@ open class BaseApp : Application(), Configuration.Provider {
 		if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
 			Security.insertProviderAt(Conscrypt.newProvider(), 1)
 		}
+		if (!settings.isRenamedSourcePreferencesMigrated) {
+			// Sources renamed by database schema 34, and the DD_/JS_ spellings a shipped install
+			// still holds, keep their settings: the files move with them, once.
+			SourceSettings.migrateRenamedPreferenceFiles(this)
+			settings.isRenamedSourcePreferencesMigrated = true
+		}
 		setupActivityLifecycleCallbacks()
-		mihonExtensionManager.initialize()
 		processLifecycleScope.launch(Dispatchers.IO) {
 			setupDatabaseObservers()
 			localStorageChanges.collect(localMangaIndexProvider.get())
 		}
+		processLifecycleScope.launch(Dispatchers.IO) {
+			// Parse the bundled catalogue before the first screen asks it for a source.
+			dataDrivenCatalogue.warmUp()
+		}
 		workScheduleManager.init()
+		CatalogueRefreshWorker.schedule(this)
 		// Self-hosted Nyora sync server (OAuth2/JWT — replaces Supabase + Google).
 		// anonKey is unused by this server but kept non-blank so isConfigured stays true.
 		supabaseConfig.configure(
 			url = "https://sync.nyora.xyz",
 			anonKey = "self-hosted"
 		)
-		// Refresh the source catalogue in the background (uses the bundled default URL unless the user pasted an override).
-		processLifecycleScope.launch(Dispatchers.IO) {
-			dataDrivenCatalogue.refresh()
-			mangaSourcesRepository.assimilateFromCatalogue()
-		}
 	}
 
 	override fun attachBaseContext(base: Context) {
 		super.attachBaseContext(base)
-		// ACRA removed
-	} 
+		// Load the obfuscated-domain table before any class the domain-obfuscation plugin
+		// instrumented can initialise: release and nightly builds have their domain constants
+		// rewritten to DomainVault.d(index) (see build-logic), and a companion that runs before
+		// the table is loaded would keep "" for the process lifetime. Nothing injected has run yet
+		// here, and the base context already serves the assets.
+		com.nyora.hasan72341.core.vault.DomainVault.init(base)
+	}
 
 	@WorkerThread
 	private fun setupDatabaseObservers() {

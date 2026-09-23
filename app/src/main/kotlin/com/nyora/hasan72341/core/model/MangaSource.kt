@@ -10,6 +10,8 @@ import androidx.annotation.StringRes
 import androidx.core.content.ContextCompat
 import androidx.core.text.inSpans
 import com.nyora.hasan72341.R
+import com.nyora.hasan72341.core.parser.datadriven.DataDrivenCatalogue
+import com.nyora.hasan72341.core.parser.datadriven.findCanonical
 import com.nyora.hasan72341.core.parser.external.ExternalMangaSource
 import com.nyora.hasan72341.core.util.ext.getDisplayName
 import com.nyora.hasan72341.core.util.ext.toLocale
@@ -39,28 +41,31 @@ fun MangaSource(name: String?): MangaSource {
 		LocalMangaSource.name -> return LocalMangaSource
 		TestMangaSource.name -> return TestMangaSource
 	}
+	if (name.startsWith(DataDrivenMangaSource.PREFIX)) {
+		// Rows persisted under a renamed or retired spelling still have to reach their row, or
+		// their history, favourites and downloads read as an unknown source.
+		DataDrivenCatalogue.instance?.findCanonical(name)?.let { return it }
+		// An unknown data source is still a data source: keep its identity so a catalogue refresh
+		// can resolve it later instead of orphaning the rows that reference it.
+		return AnonymousMangaSource(name)
+	}
+	if (name.startsWith("MIHON_") || name.startsWith("mihon:") || name.all(Char::isDigit)) {
+		return UnknownMangaSource
+	}
 	if (name.startsWith("content:")) {
 		val parts = name.substringAfter(':').splitTwoParts('/') ?: return UnknownMangaSource
 		return ExternalMangaSource(packageName = parts.first, authority = parts.second)
 	}
-	if (DataDrivenMangaSource.isDataDriven(name)) {
-		return DataDrivenMangaSource.resolve(name) ?: UnknownMangaSource
-	}
-	// A Mihon-shaped reference reaching this factory means no installed extension claimed it (those
-	// resolve through MihonExtensionManager). Rather than render the entry as an unknown, broken
-	// source, fall back to the catalogue source reading the same site — this is what keeps a library
-	// imported or synced from Mihon usable without the matching Keiyoushi extension installed.
-	if (name.startsWith(DataDrivenMangaSource.MIHON_PREFIX)) {
-		return DataDrivenMangaSource.resolveMihonName(name) ?: UnknownMangaSource
+	if (name.startsWith("JS_")) {
+		return AnonymousMangaSource(name)
 	}
 	MangaParserSource.entries.forEach {
 		if (it.name == name) return it
 	}
-	// Legacy / cross-client native ids ("parser:MANGADEX", "JS_MANGAFIRE_JA", bare "SUSHISCANFR")
-	// synced from web/desktop map to their data-driven equivalent when the catalogue has one.
-	DataDrivenMangaSource.resolveNativeId(name)?.let { return it }
 	return UnknownMangaSource
 }
+
+private data class AnonymousMangaSource(override val name: String) : MangaSource
 
 fun Collection<String>.toMangaSources() = map(::MangaSource)
 
@@ -71,7 +76,8 @@ fun ContentType.isHentai(): Boolean = this == ContentType.HENTAI_MANGA ||
 fun MangaSource.isNsfw(): Boolean = when (val source = unwrap()) {
 	is MangaSourceInfo -> source.mangaSource.isNsfw()
 	is MangaParserSource -> source.contentType.toNyoraContentType().isHentai()
-	is DataDrivenMangaSource -> source.nsfw
+	// The catalogue marks adult rows explicitly; several of them carry a non-hentai content type.
+	is DataDrivenMangaSource -> source.nsfw || source.contentType.isHentai()
 	is com.nyora.hasan72341.mihon.parsers.model.ContentSource -> source.contentType.isHentai()
 	else -> false
 }
@@ -104,40 +110,22 @@ tailrec fun MangaSource.unwrap(): MangaSource = if (this is MangaSourceInfo) {
 
 fun MangaSource.getLocale(): Locale? = when (val source = unwrap()) {
 	is MangaParserSource -> source.locale.toLocaleOrNull()
-	is DataDrivenMangaSource -> source.lang.takeIf { it.isNotEmpty() && it != "all" }?.toLocaleOrNull()
 	is com.nyora.hasan72341.mihon.parsers.model.ContentSource -> source.locale.takeIf { it.isNotEmpty() }?.toLocaleOrNull()
 	else -> null
 }
 
 fun MangaSource.getContentTypeOrNull(): ContentType? = when (val source = unwrap()) {
 	is MangaParserSource -> source.contentType.toNyoraContentType()
-	is DataDrivenMangaSource -> source.contentType.toDataDrivenContentType(source.nsfw)
 	is com.nyora.hasan72341.mihon.parsers.model.ContentSource -> source.contentType
 	else -> null
 }
 
 fun MangaSource.contentTypeOrManga(): ContentType = getContentTypeOrNull() ?: ContentType.MANGA
 
-// Catalogue contentType string -> app ContentType; untagged rows fall back by nsfw flag.
-private fun String?.toDataDrivenContentType(nsfw: Boolean): ContentType = when (this?.trim()?.uppercase()) {
-	"MANGA" -> ContentType.MANGA
-	"MANHWA" -> ContentType.MANHWA
-	"MANHUA" -> ContentType.MANHUA
-	"COMICS", "COMIC" -> ContentType.COMICS
-	"NOVEL" -> ContentType.NOVEL
-	"ONE_SHOT", "ONESHOT" -> ContentType.ONE_SHOT
-	"DOUJINSHI" -> ContentType.DOUJINSHI
-	"IMAGE_SET", "IMAGESET" -> ContentType.IMAGE_SET
-	"HENTAI", "HENTAI_MANGA" -> ContentType.HENTAI_MANGA
-	"HENTAI_NOVEL" -> ContentType.HENTAI_NOVEL
-	else -> if (nsfw) ContentType.HENTAI_MANGA else ContentType.MANGA
-}
-
 // Raw locale code (e.g. "en"; "" for multi-language sources). Works for both native
 // MangaParserSource and JS/ContentSource sources, which don't share it on the base interface.
 fun MangaSource.localeCode(): String = when (val source = unwrap()) {
 	is MangaParserSource -> source.locale
-	is DataDrivenMangaSource -> source.lang
 	is com.nyora.hasan72341.mihon.parsers.model.ContentSource -> source.locale
 	else -> ""
 }
@@ -185,7 +173,8 @@ fun String?.toMangaSourceRef(): MangaSourceRef = when (this) {
 	null, "", UnknownMangaSource.name -> MangaSourceRef.Unknown
 	LocalMangaSource.name -> MangaSourceRef.Local
 	else -> when {
-		startsWith("MIHON_") -> MangaSourceRef.Mihon(this, removePrefix("MIHON_").toLongOrNull() ?: 0L)
+		startsWith("data:") -> runCatching { MangaSourceRef.Data(this) }.getOrDefault(MangaSourceRef.Unknown)
+		startsWith("MIHON_") || startsWith("mihon:") || all(Char::isDigit) -> MangaSourceRef.Unknown
 		startsWith("JS_") -> MangaSourceRef.Script(this)
 		else -> MangaSourceRef.Parser(this)
 	}

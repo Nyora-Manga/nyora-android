@@ -49,6 +49,7 @@
 		android:localeConfig="@xml/locales_config"
 		android:networkSecurityConfig="@xml/network_security_config"
 		android:requestLegacyExternalStorage="true"
+		android:resizeableActivity="true"
 		android:roundIcon="@mipmap/ic_launcher_round"
 		android:supportsRtl="true"
 		android:theme="@style/Theme.Nyora"
@@ -257,9 +258,6 @@
 		<activity
 			android:name="com.nyora.hasan72341.settings.sources.catalog.SourcesCatalogActivity"
 			android:label="@string/sources_catalog" />
-		<activity
-			android:name="com.nyora.hasan72341.settings.sources.extension.ExtensionDownloaderActivity"
-			android:label="@string/extensions_manager" />
 		<activity
 			android:name="com.nyora.hasan72341.stats.ui.StatsActivity"
 			android:label="@string/reading_stats" />

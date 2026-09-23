@@ -21,6 +21,8 @@ import com.nyora.hasan72341.list.domain.ReadingProgress.Companion.PROGRESS_COMPL
 
 @Dao
 abstract class HistoryDao : MangaQueryBuilder.ConditionCallback {
+	@Query("SELECT * FROM history ORDER BY manga_id")
+	abstract suspend fun findAllForBackup(): List<HistoryEntity>
 
 	@Transaction
 	@Query("SELECT * FROM history WHERE deleted_at = 0 ORDER BY updated_at DESC LIMIT :limit OFFSET :offset")

@@ -380,19 +380,10 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
 		get() = prefs.getBoolean(KEY_SOURCES_ENABLED_ALL, false)
 		set(value) = prefs.edit { putBoolean(KEY_SOURCES_ENABLED_ALL, value) }
 
-	// Always true: sources come from the user's catalogue URL, so there's nothing to gate.
+	// Always true: the source catalogue ships in the APK, so there is nothing to gate.
 	var isSourcesUnlocked: Boolean
 		get() = true
 		set(value) = prefs.edit { putBoolean(KEY_SOURCES_UNLOCKED, value) }
-
-	var isSourcesManuallyUnlocked: Boolean
-		get() = prefs.getBoolean(KEY_SOURCES_MANUAL_UNLOCK, false)
-		set(value) = prefs.edit { putBoolean(KEY_SOURCES_MANUAL_UNLOCK, value) }
-
-	// The catalogue URL the user pasted; the source list is fetched from it at runtime. Empty = none.
-	var sourceCatalogueUrl: String
-		get() = prefs.getString(KEY_SOURCE_CATALOGUE_URL, null).orEmpty()
-		set(value) = prefs.edit { putString(KEY_SOURCE_CATALOGUE_URL, value.trim()) }
 
 	val isPagesNumbersEnabled: Boolean
 		get() = prefs.getBoolean(KEY_PAGES_NUMBERS, false)
@@ -655,6 +646,11 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
 	val isAutoLocalChaptersCleanupEnabled: Boolean
 		get() = prefs.getBoolean(KEY_CHAPTERS_CLEAR_AUTO, false)
 
+	/** One-shot guard: the per-source settings of the sources schema 34 renamed move exactly once. */
+	var isRenamedSourcePreferencesMigrated: Boolean
+		get() = prefs.getBoolean(KEY_SOURCE_PREFS_RENAMED, false)
+		set(value) = prefs.edit { putBoolean(KEY_SOURCE_PREFS_RENAMED, value) }
+
 	fun isPagesCropEnabled(mode: ReaderMode): Boolean {
 		val rawValue = prefs.getStringSet(KEY_READER_CROP, emptySet())
 		if (rawValue.isNullOrEmpty()) {
@@ -884,9 +880,6 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
 		const val KEY_SOURCES_VERSION = "sources_version"
 		const val KEY_SOURCES_ENABLED_ALL = "sources_enabled_all"
 		const val KEY_SOURCES_UNLOCKED = "sources_unlocked"
-		const val KEY_SOURCES_MANUAL_UNLOCK = "sources_manual_unlock"
-		const val KEY_SOURCE_CATALOGUE_URL = "source_catalogue_url"
-		const val KEY_SOURCE_REPOSITORY_URL = "source_repository_url"
 		const val KEY_QUICK_FILTER = "quick_filter"
 		const val KEY_COLLAPSE_DESCRIPTION = "description_collapse"
 		const val KEY_BACKUP_TG_ENABLED = "backup_periodic_tg_enabled"
@@ -923,6 +916,8 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
 		const val KEY_CLEAR_MANGA_DATA = "manga_data_clear"
 		const val KEY_STORAGE_USAGE = "storage_usage"
 		const val KEY_WEBVIEW_CLEAR = "webview_clear"
+
+		private const val KEY_SOURCE_PREFS_RENAMED = "source_prefs_renamed_v34"
 
 		// old keys are for migration only
 		private const val KEY_IMAGES_PROXY_OLD = "images_proxy"

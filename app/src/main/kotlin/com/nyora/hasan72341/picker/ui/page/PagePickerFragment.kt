@@ -20,6 +20,7 @@ import com.nyora.hasan72341.core.ui.list.BoundsScrollListener
 import com.nyora.hasan72341.core.ui.list.OnListItemClickListener
 import com.nyora.hasan72341.core.ui.util.PagerNestedScrollHelper
 import com.nyora.hasan72341.core.util.ext.consumeAll
+import com.nyora.hasan72341.core.util.ext.contentInsetsType
 import com.nyora.hasan72341.core.util.ext.observe
 import com.nyora.hasan72341.core.util.ext.observeEvent
 import com.nyora.hasan72341.core.util.ext.showOrHide
@@ -93,7 +94,7 @@ class PagePickerFragment :
 	}
 
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val typeBask = WindowInsetsCompat.Type.systemBars()
+		val typeBask = contentInsetsType
 		val barsInsets = insets.getInsets(typeBask)
 		viewBinding?.recyclerView?.setPadding(
 			barsInsets.left,

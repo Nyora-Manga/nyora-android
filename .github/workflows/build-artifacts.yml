@@ -4,11 +4,9 @@ name: Build Release Artifacts
 # against. Both are signed with the release keystore (secrets.KEYSTORE_FILE and
 # friends) and uploaded as run artifacts.
 #
-# This exists alongside release.yml because that workflow only fires on a v* tag
-# and derives its versionCode as MAJOR*10000 + MINOR*100 + PATCH, which does not
-# match the MAJOR*10000 + MINOR*1000 convention this project actually uses
-# (2.6 -> 26000, not 20600). Here the version is read straight from
-# app/build.gradle, or overridden via the dispatch inputs.
+# This exists alongside release.yml because that workflow only fires on a v* tag.
+# Here the version is read straight from app/build.gradle, or overridden via the
+# dispatch inputs.
 on:
   workflow_dispatch:
     inputs:
@@ -31,6 +29,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Check out the data-driven sources
+        run: .github/scripts/init-data-submodule.sh
+
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
@@ -39,6 +40,8 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       - name: Configure Gradle memory for CI
         # The project gradle.properties asks for 8 GB for both the Gradle and

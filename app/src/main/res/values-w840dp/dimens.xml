@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+	<dimen name="preferred_grid_width">160dp</dimen>
+</resources>

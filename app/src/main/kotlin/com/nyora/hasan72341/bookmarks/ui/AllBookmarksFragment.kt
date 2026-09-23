@@ -25,11 +25,11 @@ import com.nyora.hasan72341.core.ui.list.ListSelectionController
 import com.nyora.hasan72341.core.ui.list.OnListItemClickListener
 import com.nyora.hasan72341.core.ui.list.fastscroll.FastScroller
 import com.nyora.hasan72341.core.ui.util.ReversibleActionObserver
-import com.nyora.hasan72341.core.util.ext.consumeAllSystemBarsInsets
+import com.nyora.hasan72341.core.util.ext.consumeAllContentInsets
 import com.nyora.hasan72341.core.util.ext.findAppCompatDelegate
 import com.nyora.hasan72341.core.util.ext.observe
 import com.nyora.hasan72341.core.util.ext.observeEvent
-import com.nyora.hasan72341.core.util.ext.systemBarsInsets
+import com.nyora.hasan72341.core.util.ext.contentInsets
 import com.nyora.hasan72341.databinding.FragmentListSimpleBinding
 import com.nyora.hasan72341.list.ui.GridSpanResolver
 import com.nyora.hasan72341.list.ui.adapter.ListHeaderClickListener
@@ -112,7 +112,7 @@ class AllBookmarksFragment :
 	}
 
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val barsInsets = insets.systemBarsInsets
+		val barsInsets = insets.contentInsets
 		val basePadding = resources.getDimensionPixelOffset(R.dimen.list_spacing_normal)
 		viewBinding?.recyclerView?.setPadding(
 			barsInsets.left + basePadding,
@@ -120,7 +120,7 @@ class AllBookmarksFragment :
 			barsInsets.right + basePadding,
 			barsInsets.bottom + basePadding,
 		)
-		return insets.consumeAllSystemBarsInsets()
+		return insets.consumeAllContentInsets()
 	}
 
 	override fun onDestroyView() {

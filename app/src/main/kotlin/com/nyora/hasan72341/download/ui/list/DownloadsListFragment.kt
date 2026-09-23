@@ -27,7 +27,7 @@ import com.nyora.hasan72341.core.ui.util.ReversibleActionObserver
 import com.nyora.hasan72341.core.util.ext.addMenuProvider
 import com.nyora.hasan72341.core.util.ext.observe
 import com.nyora.hasan72341.core.util.ext.observeEvent
-import com.nyora.hasan72341.core.util.ext.systemBarsInsets
+import com.nyora.hasan72341.core.util.ext.contentInsets
 import com.nyora.hasan72341.databinding.FragmentListBinding
 import com.nyora.hasan72341.download.ui.worker.DownloadWorker
 import com.nyora.hasan72341.list.ui.adapter.TypedListSpacingDecoration
@@ -93,7 +93,7 @@ class DownloadsListFragment : BaseFragment<FragmentListBinding>(),
 	}
 
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val bars = insets.systemBarsInsets
+		val bars = insets.contentInsets
 		viewBinding?.recyclerView?.updatePadding(
 			left = bars.left,
 			right = bars.right,

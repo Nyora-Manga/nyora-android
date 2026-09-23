@@ -19,6 +19,7 @@ import com.nyora.hasan72341.core.model.titleResId
 import com.nyora.hasan72341.core.nav.router
 import com.nyora.hasan72341.core.ui.BaseActivity
 import com.nyora.hasan72341.core.ui.widgets.ChipsView
+import com.nyora.hasan72341.core.util.ext.contentInsetsType
 import com.nyora.hasan72341.core.util.ext.getDisplayName
 import com.nyora.hasan72341.core.util.ext.observe
 import com.nyora.hasan72341.core.util.ext.tryLaunch
@@ -48,7 +49,7 @@ class WelcomeActivity : BaseActivity<ActivityWelcomeBinding>(), ChipsView.OnChip
 	)
 
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+		val systemBars = insets.getInsets(contentInsetsType)
 		v.updatePadding(top = systemBars.top, bottom = systemBars.bottom)
 		return insets
 	}
@@ -63,7 +64,6 @@ class WelcomeActivity : BaseActivity<ActivityWelcomeBinding>(), ChipsView.OnChip
 		viewBinding.buttonSignIn.setOnClickListener(this)
 		viewBinding.buttonRegister.setOnClickListener(this)
 		viewBinding.buttonGuest.setOnClickListener(this)
-		viewBinding.buttonAddSources.setOnClickListener(this)
 		viewBinding.buttonDirectories.setOnClickListener(this)
 		viewBinding.buttonFinishSetup.setOnClickListener(this)
 
@@ -106,12 +106,6 @@ class WelcomeActivity : BaseActivity<ActivityWelcomeBinding>(), ChipsView.OnChip
 			R.id.button_guest -> {
 				viewBinding.viewFlipper.displayedChild = 1 // Go to step 2
 				viewBinding.headerTitle.setText(R.string.welcome_sources_title)
-			}
-
-			R.id.button_add_sources -> {
-				// Onboarding ships source-less; let the user paste their catalogue URL right here so
-				// the language choice they just made is applied to the sources that load.
-				router.showAddSourceRepository()
 			}
 
 			R.id.button_directories -> {

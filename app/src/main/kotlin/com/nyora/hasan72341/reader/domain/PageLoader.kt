@@ -24,6 +24,7 @@ import com.nyora.hasan72341.core.network.CommonHeaders
 import com.nyora.hasan72341.core.network.MangaHttpClient
 import com.nyora.hasan72341.core.network.imageproxy.ImageProxyInterceptor
 import com.nyora.hasan72341.core.parser.CachingMangaRepository
+import com.nyora.hasan72341.core.parser.MangaPageRequest
 import com.nyora.hasan72341.core.parser.MangaRepository
 import com.nyora.hasan72341.core.prefs.AppSettings
 import com.nyora.hasan72341.core.ui.image.TrimTransformation
@@ -224,12 +225,16 @@ class PageLoader @Inject constructor(
 		error.printStackTraceDebug("PageLoader::getTrimmedBounds")
 	}.getOrNull()
 
-	suspend fun getPageUrl(page: MangaPage, sourceName: String? = null): String {
+	suspend fun getPageUrl(page: MangaPage, sourceName: String? = null): String =
+		getPageRequest(page, sourceName).url
+
+	/** The page's image url together with the headers its source needs to serve it. */
+	suspend fun getPageRequest(page: MangaPage, sourceName: String? = null): MangaPageRequest {
 		val source = when {
 			sourceName != null -> com.nyora.hasan72341.core.model.MangaSource(sourceName)
 			else -> page.source ?: com.nyora.hasan72341.core.model.MangaSource(null)
 		}
-		return getRepository(source).getPageUrl(page)
+		return getRepository(source).getPageRequest(page)
 	}
 
 	suspend fun invalidate(clearCache: Boolean) {
@@ -307,7 +312,8 @@ class PageLoader @Inject constructor(
 		isPrefetch: Boolean,
 		skipCache: Boolean,
 	): Uri = semaphore.withPermit {
-		val pageUrl = getPageUrl(page)
+		val pageRequest = getPageRequest(page)
+		val pageUrl = pageRequest.url
 		check(pageUrl.isNotBlank()) { "Cannot obtain full image url for $page" }
 		if (!skipCache) {
 			cache[pageUrl]?.let { return it.toUri() }
@@ -325,7 +331,7 @@ class PageLoader @Inject constructor(
 				if (isPrefetch) {
 					downloadSlowdownDispatcher.delay(page.source ?: com.nyora.hasan72341.core.model.MangaSource(null))
 				}
-				val request = createPageRequest(pageUrl, page.headers)
+				val request = createPageRequest(pageUrl, pageRequest.headers)
 				fetchPageWithCloudflare(request, pageUrl).use { response ->
 					response.requireBody().withProgress(progress).use {
 						cache.set(pageUrl, it.source(), it.contentType()?.toMimeType())

@@ -22,6 +22,7 @@ import coil3.toBitmap
 import com.nyora.hasan72341.R
 import com.nyora.hasan72341.core.exceptions.CloudFlareProtectedException
 import com.nyora.hasan72341.core.model.MangaSource
+import com.nyora.hasan72341.core.parser.DomainAwareRepository
 import com.nyora.hasan72341.core.parser.EmptyMangaRepository
 import com.nyora.hasan72341.core.parser.MangaRepository
 import com.nyora.hasan72341.core.parser.ParserMangaRepository
@@ -67,14 +68,7 @@ class FaviconFetcher(
 
 			is LocalMangaRepository -> imageLoader.fetch(R.drawable.ic_storage, options)
 			is MihonMangaRepository -> fetchMihonIcon(repo)
-			// Covers every repository that knows its own domain (data-driven + the native
-			// ports built on one), so adding another native source can't break its favicons.
-			is com.nyora.hasan72341.core.parser.DomainAwareRepository ->
-				fetchDomainIcon(repo.domain, repo.source.name)
-			is com.nyora.hasan72341.core.parser.MangaFireMangaRepository ->
-				fetchDomainIcon("mangafire.to", repo.source.name)
-			is com.nyora.hasan72341.core.parser.ToonDexMangaRepository ->
-				fetchDomainIcon("toondex.io", repo.source.name)
+			is DomainAwareRepository -> fetchDomainFavicon(repo.domain)
 
 			else -> throw IllegalArgumentException("Unsupported repo ${repo.javaClass.simpleName}")
 		}
@@ -122,14 +116,20 @@ class FaviconFetcher(
 		throwNSEE(lastError)
 	}
 
-	// Favicon by domain, for sources without a bundled icon (data-driven, MangaFire, ToonDex).
-	private suspend fun fetchDomainIcon(domain: String, sourceName: String): FetchResult {
+	/** The icon of a source that only knows its own domain, which is every data-driven source. */
+	private suspend fun fetchDomainFavicon(sourceDomain: String): FetchResult {
 		val sizePx = maxOf(
 			options.size.width.pxOrElse { FALLBACK_SIZE },
 			options.size.height.pxOrElse { FALLBACK_SIZE },
 			64,
 		)
-		val cacheKey = options.diskCacheKey ?: "${sourceName}_$sizePx"
+		val domain = sourceDomain
+			.trim()
+			.removePrefix("https://")
+			.removePrefix("http://")
+			.trimEnd('/')
+		// The icon belongs to the host, so a source that moves domains picks up the new site's icon.
+		val cacheKey = options.diskCacheKey ?: "${domain}_$sizePx"
 		if (options.diskCachePolicy.readEnabled) {
 			localStorageCache[cacheKey]?.let { file ->
 				return SourceFetchResult(
@@ -139,11 +139,16 @@ class FaviconFetcher(
 				)
 			}
 		}
-		// Google's favicon cache first (reaches sites that block direct /favicon.ico), then the site.
-		val candidates = listOf(
-			"https://www.google.com/s2/favicons?sz=${sizePx.coerceAtMost(128)}&domain=$domain",
-			"https://$domain/favicon.ico",
-		)
+		val candidates = if (domain.isEmpty()) {
+			emptyList()
+		} else {
+			// Google's favicon service resolves through Cloudflare-protected hosts that block a
+			// direct /favicon.ico request; fall back to the site icon if it is unavailable.
+			listOf(
+				"https://www.google.com/s2/favicons?sz=${sizePx.coerceAtMost(128)}&domain=$domain",
+				"https://$domain/favicon.ico",
+			)
+		}
 		var lastError: Exception? = null
 		for (url in candidates) {
 			currentCoroutineContext().ensureActive()

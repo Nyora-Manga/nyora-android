@@ -35,6 +35,7 @@ import com.nyora.hasan72341.core.ui.sheet.BaseAdaptiveSheet
 import com.nyora.hasan72341.core.ui.widgets.ChipsView
 import com.nyora.hasan72341.core.util.AlphanumComparator
 import com.nyora.hasan72341.core.util.ext.consume
+import com.nyora.hasan72341.core.util.ext.contentInsetsType
 import com.nyora.hasan72341.core.util.ext.getDisplayMessage
 import com.nyora.hasan72341.core.util.ext.getDisplayName
 import com.nyora.hasan72341.core.util.ext.observe
@@ -142,7 +143,7 @@ class FilterSheetFragment : BaseAdaptiveSheet<SheetFilterBinding>(),
     }
 
     override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-        val typeMask = WindowInsetsCompat.Type.systemBars()
+        val typeMask = contentInsetsType
         viewBinding?.layoutBottom?.updateLayoutParams<ViewGroup.MarginLayoutParams> {
             bottomMargin = insets.getInsets(typeMask).bottom
         }

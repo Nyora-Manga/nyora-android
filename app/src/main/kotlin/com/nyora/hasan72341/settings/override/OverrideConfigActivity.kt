@@ -25,6 +25,7 @@ import com.nyora.hasan72341.mihon.parsers.model.Manga
 import com.nyora.hasan72341.mihon.parsers.util.ifNullOrEmpty
 import com.nyora.hasan72341.picker.ui.PageImagePickContract
 import com.google.android.material.R as materialR
+import com.nyora.hasan72341.core.util.ext.contentInsetsType
 
 @AndroidEntryPoint
 class OverrideConfigActivity : BaseActivity<ActivityOverrideEditBinding>(), View.OnClickListener,
@@ -51,7 +52,7 @@ class OverrideConfigActivity : BaseActivity<ActivityOverrideEditBinding>(), View
 	}
 
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val typeMask = WindowInsetsCompat.Type.systemBars()
+		val typeMask = contentInsetsType
 		val barsInsets = insets.getInsets(typeMask)
 		viewBinding.root.setPadding(
 			barsInsets.left,

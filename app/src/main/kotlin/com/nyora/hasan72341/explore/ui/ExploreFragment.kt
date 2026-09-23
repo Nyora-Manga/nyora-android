@@ -34,11 +34,11 @@ import com.nyora.hasan72341.core.ui.util.RecyclerViewOwner
 import com.nyora.hasan72341.core.ui.util.ReversibleActionObserver
 import com.nyora.hasan72341.core.ui.util.SpanSizeResolver
 import com.nyora.hasan72341.core.util.ext.addMenuProvider
-import com.nyora.hasan72341.core.util.ext.consumeAllSystemBarsInsets
+import com.nyora.hasan72341.core.util.ext.consumeAllContentInsets
 import com.nyora.hasan72341.core.util.ext.findAppCompatDelegate
 import com.nyora.hasan72341.core.util.ext.observe
 import com.nyora.hasan72341.core.util.ext.observeEvent
-import com.nyora.hasan72341.core.util.ext.systemBarsInsets
+import com.nyora.hasan72341.core.util.ext.contentInsets
 import com.nyora.hasan72341.databinding.FragmentExploreBinding
 import com.nyora.hasan72341.explore.ui.adapter.ExploreAdapter
 import com.nyora.hasan72341.explore.ui.adapter.ExploreListEventListener
@@ -101,7 +101,7 @@ class ExploreFragment :
 	}
 
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val barsInsets = insets.systemBarsInsets
+		val barsInsets = insets.contentInsets
 		val hPadding = v.resources.getDimensionPixelOffset(R.dimen.list_spacing_normal)
 		val bottomPadding = v.resources.getDimensionPixelOffset(R.dimen.bottom_nav_height) + 
 			v.resources.getDimensionPixelOffset(R.dimen.list_spacing_large)
@@ -111,7 +111,7 @@ class ExploreFragment :
 			/* right = */ barsInsets.right + hPadding,
 			/* bottom = */ barsInsets.bottom + bottomPadding,
 		)
-		return insets.consumeAllSystemBarsInsets()
+		return insets.consumeAllContentInsets()
 	}
 
 	override fun onDestroyView() {
@@ -154,7 +154,7 @@ class ExploreFragment :
 
 	override fun onRetryClick(error: Throwable) = Unit
 
-	override fun onEmptyActionClick() = router.showAddSourceRepository()
+	override fun onEmptyActionClick() = router.openSourcesCatalog()
 
 	override fun onSelectionChanged(controller: ListSelectionController, count: Int) {
 		viewBinding?.recyclerView?.invalidateItemDecorations()

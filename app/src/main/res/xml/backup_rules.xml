@@ -1,35 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules>
 	<cloud-backup disableIfNoEncryptionCapabilities="false">
-		<include
-			domain="sharedpref"
-			path="." />
 		<exclude
 			domain="sharedpref"
-			path="_local_index.xml" />
-		<!-- Secrets must not leave the device: session cookies + scrobbler OAuth tokens. -->
-		<exclude domain="sharedpref" path="cookies.xml" />
-		<exclude domain="sharedpref" path="ANILIST.xml" />
-		<exclude domain="sharedpref" path="MAL.xml" />
-		<exclude domain="sharedpref" path="MANGABAKA.xml" />
+			path="." />
 		<exclude domain="database" />
 		<exclude domain="device_database" />
 		<exclude domain="external" />
 	</cloud-backup>
 	<device-transfer>
-		<include
-			domain="sharedpref"
-			path="." />
 		<exclude
 			domain="sharedpref"
-			path="_local_index.xml" />
-		<exclude domain="sharedpref" path="cookies.xml" />
-		<exclude domain="sharedpref" path="SHIKIMORI.xml" />
-		<exclude domain="sharedpref" path="ANILIST.xml" />
-		<exclude domain="sharedpref" path="MAL.xml" />
-		<exclude domain="sharedpref" path="KITSU.xml" />
-		<exclude domain="sharedpref" path="BANGUMI.xml" />
-		<exclude domain="sharedpref" path="MANGABAKA.xml" />
+			path="." />
 		<exclude domain="database" />
 		<exclude domain="device_database" />
 	</device-transfer>

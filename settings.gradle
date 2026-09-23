@@ -29,15 +29,6 @@ dependencyResolutionManagement {
 	}
 }
 
-// Data-driven engine runtime (Nyora-Manga/nyora-data-driven): the 35 generic engines
-// + EngineRegistry that render repo-supplied SourceDefs at runtime. Consumed locally as
-// a composite build for fast iteration; CI/release resolve the same coordinate from
-// JitPack (com.github.Nyora-Manga:nyora-data-driven). Gradle substitutes the dependency
-// with this build when the path is present.
-if (file('../../nyora-data-driven').exists()) {
-	includeBuild('../../nyora-data-driven')
-}
-
 // Scraper-stripped fork of kotatsu-parsers-redo (Play compliance): all site parsers removed, the
 // MangaParserSource enum reduced to a single @Broken STUB. Substitutes the published
 // com.github.Nyora-Manga:kotatsu-parsers-stripped when checked out locally; CI/release use JitPack.
@@ -46,5 +37,6 @@ if (file('../../kotatsu-parsers-stripped').exists()) {
 }
 
 include ':app'
+include ':engine'
 include ':translator'
 rootProject.name = "Nyora"

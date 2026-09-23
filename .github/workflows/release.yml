@@ -72,6 +72,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Check out the data-driven sources
+        run: .github/scripts/init-data-submodule.sh
+
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
@@ -80,6 +83,8 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       - name: Configure Gradle memory for CI
         # The project gradle.properties asks for 8 GB for BOTH the Gradle daemon

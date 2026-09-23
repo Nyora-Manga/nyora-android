@@ -343,18 +343,6 @@
 				</com.google.android.material.card.MaterialCardView>
 
 				<com.google.android.material.button.MaterialButton
-					android:id="@+id/button_add_sources"
-					style="@style/Widget.Material3.Button.TonalButton"
-					android:layout_width="match_parent"
-					android:layout_height="56dp"
-					android:layout_marginHorizontal="@dimen/margin_normal"
-					android:layout_marginTop="@dimen/margin_large"
-					android:text="@string/add_sources"
-					app:cornerRadius="18dp"
-					app:icon="@drawable/ic_add"
-					app:iconGravity="textStart" />
-
-				<com.google.android.material.button.MaterialButton
 					android:id="@+id/button_directories"
 					style="@style/Widget.Nyora.Button.More"
 					android:layout_width="wrap_content"

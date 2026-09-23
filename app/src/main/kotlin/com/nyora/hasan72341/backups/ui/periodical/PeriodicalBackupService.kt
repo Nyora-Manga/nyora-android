@@ -16,7 +16,6 @@ import com.nyora.hasan72341.core.prefs.AppSettings
 import com.nyora.hasan72341.core.ui.CoroutineIntentService
 import com.nyora.hasan72341.core.util.ext.checkNotificationPermission
 import com.nyora.hasan72341.core.util.ext.getDisplayMessage
-import java.util.zip.ZipOutputStream
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -44,7 +43,7 @@ class PeriodicalBackupService : CoroutineIntentService() {
 		}
 		val output = BackupUtils.createTempFile(applicationContext)
 		try {
-			ZipOutputStream(output.outputStream()).use {
+			output.outputStream().use {
 				repository.createBackup(it, null)
 			}
 			externalBackupStorage.put(output)

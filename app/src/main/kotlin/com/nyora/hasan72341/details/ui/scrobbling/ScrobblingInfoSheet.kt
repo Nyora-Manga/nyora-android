@@ -20,6 +20,7 @@ import com.nyora.hasan72341.core.nav.AppRouter
 import com.nyora.hasan72341.core.nav.router
 import com.nyora.hasan72341.core.ui.sheet.BaseAdaptiveSheet
 import com.nyora.hasan72341.core.util.ext.consume
+import com.nyora.hasan72341.core.util.ext.contentInsetsType
 import com.nyora.hasan72341.core.util.ext.getDisplayMessage
 import com.nyora.hasan72341.core.util.ext.observe
 import com.nyora.hasan72341.core.util.ext.observeEvent
@@ -77,7 +78,7 @@ class ScrobblingInfoSheet :
 	}
 
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val typeMask = WindowInsetsCompat.Type.systemBars()
+		val typeMask = contentInsetsType
 		viewBinding?.root?.updatePadding(
 			bottom = insets.getInsets(typeMask).bottom,
 		)

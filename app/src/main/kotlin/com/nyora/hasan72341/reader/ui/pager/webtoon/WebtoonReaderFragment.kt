@@ -20,6 +20,7 @@ import com.nyora.hasan72341.R
 import com.nyora.hasan72341.ai.MangaTranslator
 import com.nyora.hasan72341.core.os.NetworkState
 import com.nyora.hasan72341.core.ui.list.lifecycle.RecyclerViewLifecycleDispatcher
+import com.nyora.hasan72341.core.util.ext.contentInsetsType
 import com.nyora.hasan72341.core.util.ext.firstVisibleItemPosition
 import com.nyora.hasan72341.core.util.ext.observe
 import com.nyora.hasan72341.core.util.ext.removeItemDecoration
@@ -107,7 +108,7 @@ class WebtoonReaderFragment : BaseReaderFragment<FragmentReaderWebtoonBinding>()
 	}
 
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val offsetInsets = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+		val offsetInsets = insets.getInsets(contentInsetsType)
 		viewBinding?.apply {
 			feedbackTop.updateLayoutParams<MarginLayoutParams> {
 				topMargin = bottomMargin + offsetInsets.top

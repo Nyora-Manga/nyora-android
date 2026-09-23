@@ -1,5 +1,23 @@
 package com.nyora.hasan72341.core.parser
 
+import com.nyora.hasan72341.core.SourcePatches
+import com.nyora.hasan72341.core.cache.MemoryContentCache
+import com.nyora.hasan72341.core.model.DataDrivenMangaSource
+import com.nyora.hasan72341.core.parser.datadriven.dataDrivenPatchValue
+import com.nyora.hasan72341.core.parser.datadriven.stableChapterId
+import com.nyora.hasan72341.core.parser.datadriven.stableMangaId
+import com.nyora.hasan72341.mihon.parsers.model.Manga
+import com.nyora.hasan72341.mihon.parsers.model.MangaChapter
+import com.nyora.hasan72341.mihon.parsers.model.MangaListFilter
+import com.nyora.hasan72341.mihon.parsers.model.MangaListFilterCapabilities
+import com.nyora.hasan72341.mihon.parsers.model.MangaListFilterOptions
+import com.nyora.hasan72341.mihon.parsers.model.MangaPage
+import com.nyora.hasan72341.mihon.parsers.model.MangaSource
+import com.nyora.hasan72341.mihon.parsers.model.MangaSourceRef
+import com.nyora.hasan72341.mihon.parsers.model.MangaState
+import com.nyora.hasan72341.mihon.parsers.model.MangaTag
+import com.nyora.hasan72341.mihon.parsers.model.SortOrder
+import com.nyora.hasan72341.mihon.parsers.util.runCatchingCancellable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -11,74 +29,59 @@ import okhttp3.Request
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
-import com.nyora.hasan72341.core.cache.MemoryContentCache
-import com.nyora.hasan72341.core.SourcePatches
-import com.nyora.hasan72341.core.model.DataDrivenMangaSource
-import com.nyora.hasan72341.core.model.toChronologicalChapterOrder
-import com.nyora.hasan72341.core.model.toMangaSourceRef
-import com.nyora.hasan72341.core.prefs.SourceSettings
-import com.nyora.hasan72341.mihon.parsers.config.ConfigKey
-import com.nyora.hasan72341.mihon.parsers.model.Manga
-import com.nyora.hasan72341.mihon.parsers.model.MangaChapter
-import com.nyora.hasan72341.mihon.parsers.model.MangaListFilter
-import com.nyora.hasan72341.mihon.parsers.model.MangaListFilterCapabilities
-import com.nyora.hasan72341.mihon.parsers.model.MangaListFilterOptions
-import com.nyora.hasan72341.mihon.parsers.model.MangaPage
-import com.nyora.hasan72341.mihon.parsers.model.MangaSource
-import com.nyora.hasan72341.mihon.parsers.model.MangaState
-import com.nyora.hasan72341.mihon.parsers.model.MangaTag
-import com.nyora.hasan72341.mihon.parsers.model.SortOrder
+import java.net.URI
 import java.text.SimpleDateFormat
 import java.util.EnumSet
 import java.util.Locale
 import java.util.TimeZone
 
 /**
- * Native source for the MangaNato / Mangakakalot / MangaNelo platform — the Android counterpart of
- * nyora-shared's `NatoExtensionService`, so every client parses these sites the same way.
+ * Native source for the MangaNato / Mangakakalot / MangaNelo / MangaBat platform — the Android
+ * counterpart of the shared `NatoExtensionService`, so every Nyora client parses these sites the
+ * same way.
  *
- * All three domains are one deployment running the same rewritten stack, which the generic
+ * All of these domains are one deployment running the same rewritten stack, which the generic
  * `mangabox` engine only partly matches:
  *
- * - the browse grid is `div.list-comic-item-wrap`, and the page ALSO renders a `.item` hero
- *   slider that the engine's container fallback chain matches first — so every browse page
- *   returned the same ~20 slider covers regardless of page or genre;
+ * - the browse grid is `div.list-comic-item-wrap`, and the page ALSO renders a `.item` hero slider
+ *   that the engine's container fallback chain matches first — so every browse page returned the
+ *   same ~20 slider covers regardless of page or genre;
  * - search uses `div.story_item` instead, so one selector has to cover both;
- * - the chapter list left the title page entirely: `ul.row-content-chapter` is gone, replaced by
- *   a JSON API at `/api/manga/<slug>/chapters`. Scraping yielded a title with zero chapters,
- *   which is why these could be opened but never read;
+ * - the chapter list left the title page entirely: `ul.row-content-chapter` is gone, replaced by a
+ *   JSON API at `/api/manga/<slug>/chapters`. Scraping yielded a title with zero chapters, which is
+ *   why these could be opened but never read;
  * - covers and pages live on `*.2xstorage.com` and 403 without a Referer of the site.
  *
  * The JSON API is paginated by `offset`/`limit` and its 50-item default silently truncates long
  * series, so it has to be walked to the end.
  */
 class NatoMangaRepository(
-	override val source: MangaSource,
+	override val source: DataDrivenMangaSource,
 	private val okHttpClient: OkHttpClient,
-	cache: MemoryContentCache,
-	private val settings: SourceSettings? = null,
+	/** Null disables content caching; only the unit tests, which have no Application, pass null. */
+	cache: MemoryContentCache?,
+	private val domainOverride: () -> String? = { null },
 ) : CachingMangaRepository(cache), DomainAwareRepository {
 
 	/**
-	 * Live domain, most specific first: a user override, then the shipped domain patch, then the
+	 * Live domain, most specific first: the user's override, then the shipped domain patch, then the
 	 * catalogue value, then the built-in map. The patch is consulted directly rather than only
-	 * through [SourceSettings] so a stale catalogue can't pin the source to a dead host — the
+	 * through the catalogue so a stale cached catalogue cannot pin the source to a dead host — the
 	 * Referer is derived from this and the image CDNs 403 a mismatched one.
 	 */
 	override val domain: String
-		get() {
-			val catalogue = (source as? DataDrivenMangaSource)?.domain
-			val builtIn = DOMAINS[source.name.removePrefix(DataDrivenMangaSource.PREFIX).uppercase()]
-			val patched = SourcePatches.DOMAIN_OVERRIDES[source.name]
-			val userSet = settings?.get(ConfigKey.Domain(patched ?: catalogue ?: builtIn ?: DEFAULT_DOMAIN))
-				?.takeIf { it.isNotBlank() }
-			return userSet ?: patched ?: catalogue ?: builtIn ?: DEFAULT_DOMAIN
-		}
+		get() = domainOverride()?.takeIf { it.isNotBlank() }
+			?: SourcePatches.DOMAIN_OVERRIDES.dataDrivenPatchValue(source.catalogueId)
+			?: source.domain.takeIf { it.isNotBlank() }
+			?: DOMAINS[source.catalogueId.lowercase(Locale.ROOT)]
+			?: DEFAULT_DOMAIN
 
 	private val baseUrl: String get() = "https://$domain"
 
-	/** Both sites hotlink-protect their image CDN; every image URL carries the expected Referer. */
+	/** Every one of these sites hotlink-protects its image CDN, so images carry the Referer. */
 	private val imageHeaders: Map<String, String> get() = mapOf("Referer" to "$baseUrl/")
+
+	private val sourceRef: MangaSourceRef = MangaSourceRef.Data(source.name)
 
 	private val json = Json { ignoreUnknownKeys = true }
 
@@ -104,8 +107,8 @@ class NatoMangaRepository(
 		val query = filter?.query?.takeIf { it.isNotBlank() }
 		if (query != null) {
 			// Search goes through the site's own JSON endpoint rather than /search/story/.
-			// Cloudflare challenges the HTML pages but not this one, so search keeps working
-			// before any clearance cookie exists. It answers with a single un-paginated batch.
+			// Cloudflare challenges the HTML pages but not this one, so search keeps working before
+			// any clearance cookie exists. It answers with a single un-paginated batch.
 			return@withContext if (page > 1) emptyList() else searchApi(query)
 		}
 		val url = if (order == SortOrder.UPDATED) {
@@ -118,7 +121,7 @@ class NatoMangaRepository(
 
 	/**
 	 * The endpoint answers with a JSON array for single-token queries and with the rendered
-	 * search-results HTML for multi-word ones (observed on all three domains, independent of how
+	 * search-results HTML for multi-word ones (observed on all of these domains, independent of how
 	 * the space is encoded). Accept both — the HTML uses the same story_item cards as [SELECT_CARD],
 	 * so a multi-word search still returns results instead of silently coming back empty.
 	 */
@@ -131,41 +134,42 @@ class NatoMangaRepository(
 		if (!body.trimStart().startsWith("[")) {
 			return Jsoup.parse(body, baseUrl).select(SELECT_CARD).mapNotNull { it.toManga() }
 		}
-		val hits = runCatching { json.decodeFromString<List<SearchDto>>(body) }.getOrNull().orEmpty()
+		val hits = runCatchingCancellable { json.decodeFromString<List<SearchDto>>(body) }.getOrNull().orEmpty()
 		return hits.mapNotNull { dto ->
 			val slug = dto.slug.ifBlank { dto.url.trimEnd('/').substringAfterLast('/') }
 			if (slug.isBlank() || dto.name.isBlank()) return@mapNotNull null
 			val path = "/manga/$slug"
 			Manga(
-				id = "${source.name}|$path",
+				id = stableMangaId(source.catalogueId, path),
 				title = dto.name.trim(),
 				url = path,
 				publicUrl = baseUrl + path,
+				isNsfw = source.nsfw,
 				coverUrl = dto.thumb,
 				authors = dto.author.split(',').map { it.trim() }.filter { it.isNotEmpty() },
-				source = source.name.toMangaSourceRef(),
+				source = sourceRef,
 			)
 		}
 	}
 
-
 	private fun Element.toManga(): Manga? {
 		val anchor = selectFirst("a.list-story-item") ?: selectFirst("h3 a") ?: selectFirst("a[href]") ?: return null
 		val path = anchor.absUrl("href").ifBlank { return null }.toPathOrNull() ?: return null
-		// Sponsored rows sit in the grid wearing the same classes as real cards and link to a
-		// short redirect. Every real title lives under /manga/<slug>.
+		// Sponsored rows sit in the grid wearing the same classes as real cards and link to a short
+		// redirect. Every real title lives under /manga/<slug>.
 		if (!path.startsWith("/manga/")) return null
 		val title = (selectFirst("h3 a")?.text() ?: anchor.attr("title").ifBlank { anchor.text() }).trim()
 		if (title.isEmpty()) return null
 		val image = selectFirst("img")
 		val cover = image?.attr("data-src")?.takeIf { it.isNotBlank() } ?: image?.attr("src").orEmpty()
 		return Manga(
-			id = "${source.name}|$path",
+			id = stableMangaId(source.catalogueId, path),
 			title = title,
 			url = path,
 			publicUrl = baseUrl + path,
+			isNsfw = source.nsfw,
 			coverUrl = cover,
-			source = source.name.toMangaSourceRef(),
+			source = sourceRef,
 		)
 	}
 
@@ -176,18 +180,35 @@ class NatoMangaRepository(
 		// Chapters come from the JSON API, which Cloudflare does not challenge, while the detail
 		// page HTML does get challenged. Fetch them first and independently so an unsolved (or
 		// expired) clearance costs only the extra metadata, not the whole chapter list.
-		val chapters = runCatching { chapters(path) }.getOrNull().orEmpty()
-		val document = runCatching { fetchDocument(baseUrl + path) }.getOrNull()
-			?: return@withContext manga.copy(chapters = chapters.toChronologicalChapterOrder())
+		val chaptersResult = runCatchingCancellable { chapters(path) }
+		val chapters = chaptersResult.getOrNull().orEmpty()
+		val documentResult = runCatchingCancellable { fetchDocument(baseUrl + path) }
+		// Dropping to metadata-only is safe only while the chapter list itself arrived. Returning
+		// normally with zero chapters would have CachingMangaRepository write that result into
+		// MemoryContentCache and re-serve it on every open: a title with no chapters, no error, no
+		// retry and — when the failure was a Cloudflare challenge — no Solve action either.
+		if (chapters.isEmpty()) {
+			// The detail page is the request Cloudflare challenges, so its failure is the one that
+			// carries CloudFlareProtectedException, and with it the Solve action — raise that one.
+			val failure = documentResult.exceptionOrNull() ?: chaptersResult.exceptionOrNull()
+			if (failure != null) {
+				// Context, best effort: kotlinx re-creates an exception as it crosses a coroutine
+				// boundary and the copy carries no suppressed list.
+				chaptersResult.exceptionOrNull()?.takeIf { it !== failure }?.let(failure::addSuppressed)
+				throw failure
+			}
+		}
+		val document = documentResult.getOrNull()
+			?: return@withContext manga.copy(chapters = chapters)
 		val info = document.select("div.manga-info-top li").associate { row ->
-			row.text().substringBefore(':').trim().lowercase() to row.text().substringAfter(':').trim()
+			row.text().substringBefore(':').trim().lowercase(Locale.ROOT) to row.text().substringAfter(':').trim()
 		}
 		manga.copy(
 			title = document.selectFirst("h1")?.text()?.trim()?.takeIf { it.isNotEmpty() } ?: manga.title,
 			altTitles = info["alternative"]?.split('/', ';')?.map { it.trim() }?.filter { it.isNotEmpty() }
 				.orEmpty(),
 			coverUrl = document.ogContent("og:image").ifEmpty { manga.coverUrl },
-			state = when (info["status"]?.lowercase()) {
+			state = when (info["status"]?.lowercase(Locale.ROOT)) {
 				"ongoing" -> MangaState.ONGOING
 				"completed" -> MangaState.FINISHED
 				else -> null
@@ -203,7 +224,7 @@ class NatoMangaRepository(
 			// Only the genres listed for THIS title — the page also renders the site's full genre
 			// menu, and selecting every /genre/ link would tag it with all of them.
 			tags = document.select("div.manga-info-top li:contains(Genres) a").mapNotNull { it.toTag() },
-			chapters = chapters.toChronologicalChapterOrder(),
+			chapters = chapters,
 		)
 	}
 
@@ -220,10 +241,10 @@ class NatoMangaRepository(
 	 */
 	private suspend fun chapters(mangaPath: String): List<MangaChapter> {
 		val slug = mangaPath.trimEnd('/').substringAfterLast('/')
-		// The site's own reader asks for limit=-1 and gets every chapter in one response
-		// (verified 3877/3877 on Martial Peak), so the default is a single request. The
-		// offset walk below is kept only for a mirror that ignores the sentinel and caps
-		// the page — without it such a mirror would silently truncate long series.
+		// The site's own reader asks for limit=-1 and gets every chapter in one response (verified
+		// 3877/3877 on Martial Peak), so the default is a single request. The offset walk below is
+		// kept only for a mirror that ignores the sentinel and caps the page — without it such a
+		// mirror would silently truncate long series.
 		val first = fetchChapters(slug, offset = 0, limit = ALL_CHAPTERS)
 		val all = ArrayList(first?.data?.chapters.orEmpty())
 		val total = first?.data?.pagination?.total ?: 0
@@ -236,17 +257,15 @@ class NatoMangaRepository(
 				offset += batch.size
 			}
 		}
+		// The API answers newest first; the app reads and numbers chapters ascending.
 		return all.asReversed().mapIndexed { index, dto ->
 			val url = "$mangaPath/${dto.slug}"
 			MangaChapter(
-				id = "${source.name}|chapter|$url",
+				id = stableChapterId(source.catalogueId, url),
 				title = dto.name,
 				number = dto.number ?: (index + 1f),
-				volume = 0,
 				url = url,
-				scanlator = null,
 				uploadDate = dto.updatedAt.toEpochMillis(),
-				branch = null,
 				index = index,
 			)
 		}
@@ -254,7 +273,7 @@ class NatoMangaRepository(
 
 	private suspend fun fetchChapters(slug: String, offset: Int, limit: Int): ChaptersResponse? {
 		val body = fetchBody("$baseUrl/api/manga/$slug/chapters?offset=$offset&limit=$limit", asJson = true)
-		return runCatching { json.decodeFromString<ChaptersResponse>(body) }.getOrNull()
+		return runCatchingCancellable { json.decodeFromString<ChaptersResponse>(body) }.getOrNull()
 	}
 
 	// -- reader ------------------------------------------------------------
@@ -263,17 +282,19 @@ class NatoMangaRepository(
 		val path = chapter.url.toPathOrNull() ?: chapter.url
 		fetchDocument(baseUrl + path)
 			.select("div.container-chapter-reader img")
-			.mapIndexedNotNull { index, image ->
-				val src = image.attr("data-src").takeIf { it.isNotBlank() } ?: image.attr("src")
-				src.takeIf { it.isNotBlank() }?.let {
-					MangaPage(
-						url = it,
-						headers = imageHeaders,
-						id = "${chapter.url}|page|$index",
-						index = index,
-						source = source,
-					)
-				}
+			// Sourced first, indexed second: a lazy-loaded img with neither attribute must not leave
+			// a hole in the page numbering.
+			.mapNotNull { image ->
+				image.attr("data-src").takeIf { it.isNotBlank() } ?: image.attr("src").takeIf { it.isNotBlank() }
+			}
+			.mapIndexed { index, src ->
+				MangaPage(
+					url = src,
+					headers = imageHeaders,
+					id = "${chapter.url}|page|$index",
+					index = index,
+					source = source,
+				)
 			}
 	}
 
@@ -291,9 +312,9 @@ class NatoMangaRepository(
 	private suspend fun fetchBody(url: String, asJson: Boolean): String = withContext(Dispatchers.IO) {
 		val request = Request.Builder()
 			.url(url)
-			// Tag with the source so CloudFlareInterceptor can attach it to the exception it
-			// throws — without it the challenge surfaces as a bare "Protected by CloudFlare"
-			// error with no Solve action, and these sites can never be cleared.
+			// Tag with the source so CloudFlareInterceptor can attach it to the exception it throws
+			// — without it the challenge surfaces as a bare "Protected by CloudFlare" error with no
+			// Solve action, and these sites can never be cleared.
 			.tag(MangaSource::class.java, source)
 			.header("Referer", "$baseUrl/")
 			.apply {
@@ -306,14 +327,14 @@ class NatoMangaRepository(
 			.build()
 		okHttpClient.newCall(request).execute().use { response ->
 			check(response.isSuccessful) { "${source.name} request failed with HTTP ${response.code}: $url" }
-			response.body?.string().orEmpty()
+			response.body.string()
 		}
 	}
 
 	/** Absolute site URL -> the stored path, so a domain move never invalidates saved urls. */
 	private fun String.toPathOrNull(): String? = when {
 		startsWith("/") -> trimEnd('/')
-		startsWith("http") -> runCatching { java.net.URI(this).path.trimEnd('/') }
+		startsWith("http") -> runCatching { URI(this).path.trimEnd('/') }
 			.getOrNull()?.takeIf { it.isNotEmpty() }
 
 		else -> null
@@ -351,10 +372,7 @@ class NatoMangaRepository(
 	)
 
 	@Serializable
-	private class Pagination(
-		val total: Int? = null,
-		@SerialName("has_more") val hasMore: Boolean = false,
-	)
+	private class Pagination(val total: Int? = null)
 
 	@Serializable
 	private class ChapterDto(
@@ -366,21 +384,30 @@ class NatoMangaRepository(
 
 	companion object {
 
-		private const val DEFAULT_DOMAIN = "www.manganato.gg"
+		/**
+		 * Catalogue identities this repository serves. mangakakalottv is the same deployment as
+		 * mangakakalot (mangakakalot.tv folded into .gg), and MangaBat now uses the same JSON
+		 * chapter API. All are served here because the generic engine cannot read that chapter list.
+		 */
+		val SOURCE_NAMES = setOf(
+			"data:manganato",
+			"data:manganelo",
+			"data:mangakakalot",
+			"data:mangakakalottv",
+			"data:mangabat",
+		)
+
+		private const val DEFAULT_DOMAIN = "www.natomanga.com"
+
+		/** Cards the site's own manga-list grid renders per page; the browse offset steps by it. */
 		private const val PAGE_SIZE = 24
 
-		/**
-		 * Catalogue ids this repository serves. mangakakalottv is the same deployment as
-		 * mangakakalot (mangakakalot.tv folded into .gg) — served here too because its chapters
-		 * come from the JSON API, which the generic engine can't read, leaving it with none.
-		 */
-		val SOURCE_IDS = setOf("manganato", "manganelo", "mangakakalot", "mangakakalottv")
-
 		private val DOMAINS = mapOf(
-			"MANGANATO" to "www.natomanga.com",
-			"MANGANELO" to "www.nelomanga.net",
-			"MANGAKAKALOT" to "www.mangakakalot.gg",
-			"MANGAKAKALOTTV" to "www.mangakakalot.gg",
+			"manganato" to "www.natomanga.com",
+			"manganelo" to "www.nelomanga.net",
+			"mangakakalot" to "www.mangakakalot.gg",
+			"mangakakalottv" to "www.mangakakalot.gg",
+			"mangabat" to "www.mangabats.com",
 		)
 
 		/** Sentinel the site's own reader uses: return every chapter in one response. */
@@ -390,11 +417,9 @@ class NatoMangaRepository(
 		private const val CHAPTER_PAGE_SIZE = 500
 		private const val CHAPTER_HARD_CAP = 20_000
 
-		// Browse and search render different cards: `list-comic-item-wrap` on the manga lists
-		// (which also carries hidden ad placeholders wearing the same class) and `story_item`
-		// on the search results page.
+		// Browse and search render different cards: `list-comic-item-wrap` on the manga lists (which
+		// also carries hidden ad placeholders wearing the same class) and `story_item` on the search
+		// results page.
 		private const val SELECT_CARD = "div.list-comic-item-wrap:not([hidden]), div.story_item"
-
-
 	}
 }

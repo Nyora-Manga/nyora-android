@@ -1,12 +1,11 @@
 package com.nyora.hasan72341.sync.supabase
 
 import android.content.Context
+import com.nyora.hasan72341.backups.data.NyoraSourceIdentity
 import com.nyora.hasan72341.core.db.MangaDatabase
 import com.nyora.hasan72341.core.exceptions.SyncApiException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.toList
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -28,8 +27,8 @@ class SupabaseSync @Inject constructor(
     private val database: MangaDatabase,
     @BaseHttpClient private val http: OkHttpClient,
     private val config: SupabaseConfig,
+    private val barrier: SupabaseSyncBarrier,
 ) {
-	private val syncMutex = Mutex()
 
     private val historyDao get() = database.getHistoryDao()
     private val favouritesDao get() = database.getFavouritesDao()
@@ -38,7 +37,27 @@ class SupabaseSync @Inject constructor(
     private val categoriesDao get() = database.getFavouriteCategoriesDao()
     private val preferencesDao get() = database.getPreferencesDao()
     private val scrobblingDao get() = database.getScrobblingDao()
-    
+
+    /**
+     * Remote manga id -> the local id that row hashes to, for the pull in progress.
+     *
+     * Older clients wrote a server-generated id for a data-catalogue manga, so the same manga can
+     * exist in the cloud under both that id and the canonical one. [pullMangaIdentities] fills this
+     * map from the whole remote parent set and every dependent pull resolves its `manga_id` through
+     * it; [pullAll] clears it first.
+     */
+    private val pulledMangaIdAliases = HashMap<String, String>()
+
+    /**
+     * Remote manga id -> canonical `data:` source of that manga, for the pull in progress; only
+     * data-source rows are listed. A history or bookmark row of such a manga whose chapter id is
+     * not a hash was written by a shipped build and is re-keyed before it is stored.
+     */
+    private val pulledMangaSourceIds = HashMap<String, String>()
+
+    /** Local manga id -> urls of its stored chapters, read at most once per pull. */
+    private val storedChapterUrlsByManga = HashMap<String, Set<String>>()
+
     private val JSON_MT = "application/json; charset=utf-8".toMediaType()
     private val syncFunctionUrl get() = "${config.url}/functions/v1/nyora-sync"
 
@@ -61,7 +80,7 @@ class SupabaseSync @Inject constructor(
     }
 
     /** OAuth2 password grant (form-encoded) → POST /auth/token. */
-    suspend fun signIn(email: String, password: String): Boolean = syncMutex.withLock {
+    suspend fun signIn(email: String, password: String): Boolean = barrier.withSync {
         withContext(Dispatchers.IO) {
             if (!config.isConfigured) return@withContext false
             val body = okhttp3.FormBody.Builder()
@@ -80,7 +99,7 @@ class SupabaseSync @Inject constructor(
     }
 
     /** Create an account → POST /auth/register {email,password}; returns tokens on success. */
-    suspend fun register(email: String, password: String): Boolean = syncMutex.withLock {
+    suspend fun register(email: String, password: String): Boolean = barrier.withSync {
         withContext(Dispatchers.IO) {
             if (!config.isConfigured) return@withContext false
             val payload = """{"email":${email.trim().jq},"password":${password.jq}}""".toRequestBody(JSON_MT)
@@ -109,7 +128,7 @@ class SupabaseSync @Inject constructor(
         }.getOrDefault(false)
     }
 
-    suspend fun signOut() = syncMutex.withLock { config.clearTokens() }
+    suspend fun signOut() = barrier.withSync { config.clearTokens() }
 
     private suspend fun refreshTokenIfExpired(): Boolean {
         // Decode JWT payload to check exp
@@ -129,7 +148,7 @@ class SupabaseSync @Inject constructor(
 
     // -- Push --
 
-    suspend fun syncNow() = syncMutex.withLock {
+    suspend fun syncNow() = barrier.withSync {
         runSyncOperation {
             val previousCursor = config.lastSyncTimestamp
             val completedThrough = now()
@@ -142,7 +161,7 @@ class SupabaseSync @Inject constructor(
         }
     }
 
-    suspend fun restoreFromCloud() = syncMutex.withLock {
+    suspend fun restoreFromCloud() = barrier.withSync {
         runSyncOperation {
             val completedThrough = now()
             pullAll(SupabaseConfig.INITIAL_SYNC_TIMESTAMP)
@@ -150,7 +169,7 @@ class SupabaseSync @Inject constructor(
         }
     }
 
-    suspend fun pushAll() = syncMutex.withLock {
+    suspend fun pushAll() = barrier.withSync {
         runSyncOperation {
             pushAll(parseEpochMilli(config.lastSyncTimestamp))
         }
@@ -251,9 +270,10 @@ class SupabaseSync @Inject constructor(
         if (entities.isEmpty()) return
         val rows = JSONArray()
         for (s in entities) {
+            val sourceId = NyoraSourceIdentity.canonicalize(s.source) ?: continue
             rows.put(JSONObject().apply {
                 put("user_id", uid)
-                put("source_id", s.source)
+                put("source_id", sourceId)
                 put("is_pinned", s.isPinned)
                 put("is_enabled", s.isEnabled)
                 put("updated_at", now())
@@ -324,21 +344,24 @@ class SupabaseSync @Inject constructor(
         ) ?: return
         runCatching {
             val arr = JSONArray(text)
-            for (i in 0 until arr.length()) {
+            val rows = newestCanonicalTrackingRows(arr, ::canonicalPulledMangaId, ::isNewerRemoteRow)
+            for (row in rows) {
                 try {
-                    val row = arr.getJSONObject(i)
                     val dto = SbTracking.fromRow(row)
                     val scrobbler = scrobblerId(dto.trackerId) ?: continue
+                    // Older clients wrote server-generated manga ids; the alias map built by
+                    // pullMangaIdentities settles them on the row this device holds.
+                    val mangaId = canonicalPulledMangaId(dto.mangaId)
                     if (dto.deletedAt != null && dto.deletedAt.isNotBlank()) {
-                        scrobblingDao.delete(scrobbler, dto.mangaId)
+                        scrobblingDao.delete(scrobbler, mangaId)
                         continue
                     }
                     val remoteId = dto.remoteId.toLongOrNull() ?: 0L
-                    val existing = scrobblingDao.find(scrobbler, dto.mangaId)
+                    val existing = scrobblingDao.find(scrobbler, mangaId)
                     scrobblingDao.upsert(ScrobblingEntity(
                         scrobbler = scrobbler,
                         id = existing?.id ?: remoteId.toInt(),
-                        mangaId = dto.mangaId,
+                        mangaId = mangaId,
                         targetId = remoteId,
                         status = serviceStatus(scrobbler, dto.status),
                         chapter = dto.lastReadChapter.toInt(),
@@ -407,6 +430,7 @@ class SupabaseSync @Inject constructor(
         for (fm in entities) {
             val f = fm.favourite
             if (f.createdAt <= cutoff && f.deletedAt <= cutoff) continue
+            val mangaRow = fm.manga.toRemoteManga(uid, now()) ?: continue
             pushedCount++
             rows.put(JSONObject().apply {
                 put("user_id", uid)
@@ -415,7 +439,7 @@ class SupabaseSync @Inject constructor(
                 put("updated_at", now())
                 if (f.deletedAt > 0) put("deleted_at", Instant.ofEpochMilli(f.deletedAt).toString())
             })
-            mangaRows.put(fm.manga.toRemoteManga(uid))
+            mangaRows.put(mangaRow)
         }
         upsert("nyora_manga", mangaRows)
         upsert("nyora_favourite", rows)
@@ -440,8 +464,9 @@ class SupabaseSync @Inject constructor(
         for (wm in entities) {
             val h = wm.history
             if (h.updatedAt <= cutoff && h.deletedAt <= cutoff) continue
+            val mangaRow = wm.manga.toRemoteManga(uid, Instant.ofEpochMilli(h.updatedAt).toString()) ?: continue
             pushedCount++
-            mangaRows.put(wm.manga.toRemoteManga(uid, Instant.ofEpochMilli(h.updatedAt).toString()))
+            mangaRows.put(mangaRow)
             rows.put(JSONObject().apply {
                 put("user_id", uid)
                 put("manga_id", h.mangaId)
@@ -511,7 +536,7 @@ class SupabaseSync @Inject constructor(
 
     private suspend fun pushMangaCategories() {
         val uid = config.userId
-        val entities = runCatching { favouritesDao.findAll() }.getOrNull() ?: return
+        val entities = runCatching { favouritesDao.findAllForSync() }.getOrNull() ?: return
         if (entities.isEmpty()) return
         val rows = JSONArray()
         for (fm in entities) {
@@ -551,7 +576,7 @@ class SupabaseSync @Inject constructor(
 
     // -- Pull --
 
-    suspend fun pullAll() = syncMutex.withLock {
+    suspend fun pullAll() = barrier.withSync {
         runSyncOperation {
             val completedThrough = now()
             pullAll(config.lastSyncTimestamp)
@@ -560,6 +585,10 @@ class SupabaseSync @Inject constructor(
     }
 
     private suspend fun pullAll(cutoff: String) {
+        pulledMangaIdAliases.clear()
+        pulledMangaSourceIds.clear()
+        storedChapterUrlsByManga.clear()
+        pullMangaIdentities()
         pullCategories(cutoff)
         pullManga(cutoff)
         pullMangaCategories(cutoff)
@@ -632,20 +661,37 @@ class SupabaseSync @Inject constructor(
     }
 
     private suspend fun pullSourcePrefs(cutoff: String) {
-        val text = fetch("nyora_source_prefs?select=source_id,is_pinned,is_enabled", cutoff) ?: return
+        val text = fetch("nyora_source_prefs?select=source_id,is_pinned,is_enabled,updated_at", cutoff) ?: return
         runCatching {
             val arr = JSONArray(text)
             val dao = database.getSourcesDao()
+            val prefs = ArrayList<PulledSourcePref>(arr.length())
             for (i in 0 until arr.length()) {
                 try {
                     val row = arr.getJSONObject(i)
                     val sourceId = row.getString("source_id")
-                    val isPinned = row.getBoolean("is_pinned")
-                    val isEnabled = row.getBoolean("is_enabled")
-                    dao.setEnabled(sourceId, isEnabled)
-                    dao.setPinned(sourceId, isPinned)
+                    // Shipped builds pushed their DD_/JS_ spellings; the same upgrade the pull
+                    // applies to manga rows brings those prefs to the source they belong to.
+                    val canonicalSourceId = canonicalPulledSourceId(sourceId) ?: continue
+                    prefs += PulledSourcePref(
+                        sourceId = sourceId,
+                        canonicalSourceId = canonicalSourceId,
+                        isPinned = row.getBoolean("is_pinned"),
+                        isEnabled = row.getBoolean("is_enabled"),
+                        updatedAt = parseEpochMilliOrZero(row.optString("updated_at", "")),
+                    )
                 } catch (e: Exception) {
                     android.util.Log.e("SupabaseSync", "pullSourcePrefs row failed", e)
+                }
+            }
+            // A stale DD_/JS_ row and the current data: row of one source apply once, newest
+            // first, so backend row order cannot re-enable a source disabled here or hide one.
+            for (pref in newestCanonicalSourcePrefs(prefs)) {
+                try {
+                    dao.setEnabled(pref.canonicalSourceId, pref.isEnabled)
+                    dao.setPinned(pref.canonicalSourceId, pref.isPinned)
+                } catch (e: Exception) {
+                    android.util.Log.e("SupabaseSync", "pullSourcePrefs ${pref.canonicalSourceId} failed", e)
                 }
             }
         }.onFailure { android.util.Log.e("SupabaseSync", "pullSourcePrefs failed", it) }
@@ -691,13 +737,15 @@ class SupabaseSync @Inject constructor(
     }
 
     private suspend fun pullMangaCategories(cutoff: String) {
-        val text = fetch("nyora_manga_category?select=manga_id,category_id,deleted_at", cutoff) ?: return
+        val text = fetch("nyora_manga_category?select=manga_id,category_id,updated_at,deleted_at", cutoff) ?: return
         runCatching {
             val arr = JSONArray(text)
-            for (i in 0 until arr.length()) {
+            val rows = newestCanonicalJsonRows(arr) {
+                "${canonicalPulledMangaId(it.getString("manga_id"))}|${it.getString("category_id")}"
+            }
+            for (row in rows) {
                 try {
-                    val row = arr.getJSONObject(i)
-                    val mangaId = row.getString("manga_id")
+                    val mangaId = canonicalPulledMangaId(row.getString("manga_id"))
                     val categoryIdStr = row.getString("category_id")
                     val categoryId = categoryIdStr.toLongOrNull() ?: continue
                     val deleted = !row.isNull("deleted_at")
@@ -726,14 +774,14 @@ class SupabaseSync @Inject constructor(
     }
 
     private suspend fun pullMangaPrefs(cutoff: String) {
-        val text = fetch("nyora_manga_prefs?select=manga_id,reader_mode,brightness,contrast", cutoff) ?: return
+        val text = fetch("nyora_manga_prefs?select=manga_id,reader_mode,brightness,contrast,updated_at", cutoff) ?: return
         runCatching {
             val arr = JSONArray(text)
             val dao = database.getPreferencesDao()
-            for (i in 0 until arr.length()) {
+            val rows = newestCanonicalJsonRows(arr) { canonicalPulledMangaId(it.getString("manga_id")) }
+            for (row in rows) {
                 try {
-                    val row = arr.getJSONObject(i)
-                    val mangaId = row.getString("manga_id")
+                    val mangaId = canonicalPulledMangaId(row.getString("manga_id"))
                     val readerModeStr = row.optString("reader_mode", "0")
                     val mode = readerModeStr.toIntOrNull() ?: 0
                     val brightness = row.optDouble("brightness", 0.0).toFloat()
@@ -760,14 +808,33 @@ class SupabaseSync @Inject constructor(
         }.onFailure { android.util.Log.e("SupabaseSync", "pullMangaPrefs failed", it) }
     }
 
+    /**
+     * Maps every remote manga id to the local id this device keys by, before anything is pulled.
+     *
+     * Deliberately ignores the incremental cutoff: an old or foreign client can update a history,
+     * favourite, bookmark or category row without touching its parent, and that dependent row still
+     * has to resolve to the manga row this device holds or it misses the foreign key and is dropped.
+     * Only the three identity columns are read, so the row pulls below stay incremental. A failure
+     * propagates and aborts the pull rather than writing dependent rows under un-aliased ids.
+     */
+    private suspend fun pullMangaIdentities() {
+        val text = fetch("nyora_manga?select=id,url,source_ref") ?: return
+        val identities = pulledMangaIdentities(JSONArray(text)) { index, error ->
+            android.util.Log.e("SupabaseSync", "pullMangaIdentities row $index failed", error)
+        }
+        pulledMangaIdAliases.putAll(identities.aliases)
+        pulledMangaSourceIds.putAll(identities.sourceIds)
+    }
+
     private suspend fun pullManga(cutoff: String) {
-        val text = fetch("nyora_manga?select=id,title,alt_titles,url,public_url,rating,is_nsfw,content_rating,cover_url,large_cover_url,state,authors,source_ref,description,tags", cutoff) ?: return
+        val text = fetch("nyora_manga?select=id,title,alt_titles,url,public_url,rating,is_nsfw,content_rating,cover_url,large_cover_url,state,authors,source_ref,description,tags,updated_at", cutoff) ?: return
         runCatching {
             val arr = JSONArray(text)
-            for (i in 0 until arr.length()) {
+            // The alias map is complete before this runs, so the key a duplicate collapses on never
+            // depends on which of the two backend rows happened to arrive first.
+            for (row in newestCanonicalJsonRows(arr) { canonicalPulledMangaId(it.getString("id")) }) {
                 try {
-                    val row = arr.getJSONObject(i)
-                    val mangaId = row.getString("id")
+                    val mangaId = canonicalPulledMangaId(row.getString("id"))
                     val title = row.getString("title")
                     val altTitles = if (row.isNull("alt_titles")) null else row.getString("alt_titles")
                     val url = row.getString("url")
@@ -779,11 +846,18 @@ class SupabaseSync @Inject constructor(
                     val largeCoverUrl = if (row.isNull("large_cover_url")) null else row.getString("large_cover_url")
                     val state = if (row.isNull("state")) null else row.getString("state")
                     val authors = if (row.isNull("authors")) null else row.getString("authors")
-                    val source = decodeSourceRef(row.getString("source_ref"))
+                    // The id above is hashed from the canonical source, so the row has to be stored
+                    // under that source too or the manga resolves to a retired, unopenable identity.
+                    // decodeSourceRef runs first: other clients also wrote {"source"}, {"id"}, {"type"}
+                    // and ".MangaSourceRef." shapes, which the stored-source upgrade does not read.
+                    val rawSourceRef = row.getString("source_ref")
+                    val source = canonicalPulledSourceId(decodeSourceRef(rawSourceRef))
+                        ?.let { JSONObject().put("name", it).toString() }
+                        ?: rawSourceRef
                     val description = row.optString("description", "")
                     val tags = row.optString("tags", "[]")
-                    
-                    mangaDao.upsert(com.nyora.hasan72341.core.db.entity.MangaEntity(
+
+                    val pulled = MangaEntity(
                         id = mangaId,
                         title = title,
                         altTitles = altTitles,
@@ -798,8 +872,12 @@ class SupabaseSync @Inject constructor(
                         authors = authors,
                         source = source,
                         description = description,
-                        tags = tags
-                    ))
+                        tags = tags,
+                    )
+                    // Room's upsert writes every column and the cloud carries no chapter list,
+                    // unread count or progress: the row this device holds supplies them, which is
+                    // also what pullHistory/pullBookmarks re-key a shipped chapter id against.
+                    mangaDao.upsert(pulledMangaWithLocalReaderState(pulled, mangaDao.find(mangaId)))
                 } catch (e: Exception) {
                     android.util.Log.e("SupabaseSync", "pullManga row failed", e)
                 }
@@ -808,15 +886,15 @@ class SupabaseSync @Inject constructor(
     }
 
     private suspend fun pullFavourites(cutoff: String) {
-        val text = fetch("nyora_favourite?select=manga_id,deleted_at", cutoff) ?: return
+        val text = fetch("nyora_favourite?select=manga_id,updated_at,deleted_at", cutoff) ?: return
         runCatching {
             val arr = JSONArray(text)
             val categories = categoriesDao.findAll()
             val defaultCategoryId = categories.firstOrNull()?.categoryId?.toLong() ?: 1L
-            for (i in 0 until arr.length()) {
+            val rows = newestCanonicalJsonRows(arr) { canonicalPulledMangaId(it.getString("manga_id")) }
+            for (row in rows) {
                 try {
-                    val row = arr.getJSONObject(i)
-                    val mangaId = row.getString("manga_id")
+                    val mangaId = canonicalPulledMangaId(row.getString("manga_id"))
                     val deleted = !row.isNull("deleted_at")
                     if (deleted) {
                         favouritesDao.delete(mangaId)
@@ -850,10 +928,11 @@ class SupabaseSync @Inject constructor(
         val text = fetch("nyora_history?select=manga_id,source_id,chapter_id,chapter_title,page,scroll,percent,chapters_count,updated_at,deleted_at", cutoff) ?: return
         runCatching {
             val arr = JSONArray(text)
-            for (i in 0 until arr.length()) {
+            val rows = newestCanonicalJsonRows(arr) { canonicalPulledMangaId(it.getString("manga_id")) }
+            for (row in rows) {
                 try {
-                    val row = arr.getJSONObject(i)
-                    val mangaId = row.getString("manga_id")
+                    val remoteMangaId = row.getString("manga_id")
+                    val mangaId = canonicalPulledMangaId(remoteMangaId)
                     val deleted = !row.isNull("deleted_at")
                     if (deleted) {
                          historyDao.delete(mangaId)
@@ -863,7 +942,7 @@ class SupabaseSync @Inject constructor(
                                   mangaId = mangaId,
                                   createdAt = System.currentTimeMillis(),
                                   updatedAt = parseEpochMilli(row.getString("updated_at")),
-                                  chapterId = row.getString("chapter_id"),
+                                  chapterId = localChapterId("history", remoteMangaId, mangaId, row.getString("chapter_id")),
                                   page = row.getInt("page"),
                                   scroll = row.optDouble("scroll", 0.0).toFloat(),
                                   percent = row.getDouble("percent").toFloat(),
@@ -886,11 +965,14 @@ class SupabaseSync @Inject constructor(
         runCatching {
             val arr = JSONArray(text)
             val toUpsert = mutableListOf<com.nyora.hasan72341.bookmarks.data.BookmarkEntity>()
-            for (i in 0 until arr.length()) {
+            val rows = newestCanonicalJsonRows(arr) {
+                "${canonicalPulledMangaId(it.getString("manga_id"))}|${it.getString("chapter_id")}|${it.getInt("page")}"
+            }
+            for (row in rows) {
                 try {
-                    val row = arr.getJSONObject(i)
-                    val mangaId = row.getString("manga_id")
-                    val chapterId = row.getString("chapter_id")
+                    val remoteMangaId = row.getString("manga_id")
+                    val mangaId = canonicalPulledMangaId(remoteMangaId)
+                    val chapterId = localChapterId("bookmark", remoteMangaId, mangaId, row.getString("chapter_id"))
                     val page = row.getInt("page")
                     if (!row.isNull("deleted_at")) {
                         bookmarksDao.delete(mangaId, chapterId, page)
@@ -999,30 +1081,60 @@ class SupabaseSync @Inject constructor(
         return name.substringAfterLast(".MangaSourceRef.")
     }
 
-    private fun MangaEntity.toRemoteManga(uid: String, updatedAt: String = now()): JSONObject {
-        return JSONObject().apply {
-            put("user_id", uid)
-            put("id", id)
-            put("title", title)
-            put("alt_titles", altTitles ?: "[]")
-            put("url", url)
-            put("public_url", publicUrl)
-            put("rating", rating)
-            put("is_nsfw", isNsfw)
-            contentRating?.let { put("content_rating", it) }
-            put("cover_url", coverUrl)
-            largeCoverUrl?.let { put("large_cover_url", it) }
-            state?.let { put("state", it) }
-            put("authors", authors ?: "[]")
-            // Canonical source_ref is a JSON object {"name": <source>} (nyora-web encodes/decodes it
-            // this way; the server column defaults to "{}"). Pushing a bare string made web-synced
-            // manga resolve to the raw JSON on the other client -> UnknownMangaSource.
-            put("source_ref", JSONObject().put("name", source).toString())
-            put("description", description)
-            put("tags", tags)
-            put("updated_at", updatedAt)
+    private fun canonicalPulledMangaId(remoteId: String): String = pulledMangaIdAliases[remoteId] ?: remoteId
+
+    /**
+     * The chapter id a pulled history or bookmark row is stored under. A data-source row whose
+     * chapter id is not a hash came from a shipped build; it is re-keyed from the chapter url that
+     * id carries when the manga's stored chapters know that url, which they do whenever this
+     * device has loaded the manga's details: [pullManga] runs first and carries the stored chapter
+     * list forward ([pulledMangaWithLocalReaderState]) instead of resetting it.
+     *
+     * On a fresh install, or a Restore from cloud of a manga this device has never opened, no
+     * chapter list is stored yet, so the id is kept as pushed and the log records it: the reader
+     * cannot resume from that row (its chapter id reads as 0) until a later pull selects the row
+     * again after the details have been loaded, which a Restore from cloud does for every row.
+     */
+    private suspend fun localChapterId(table: String, remoteMangaId: String, mangaId: String, remoteChapterId: String): String {
+        val sourceId = pulledMangaSourceIds[remoteMangaId]
+        // Only a shipped-build id of a data-source manga needs the stored chapters read.
+        val storedUrls = if (sourceId != null && legacyChapterUrl(remoteChapterId) != null) storedChapterUrlsOf(mangaId) else emptySet()
+        val resolved = pulledChapterIdAlias(remoteChapterId, sourceId) { storedUrls }
+        if (resolved == null) {
+            android.util.Log.w("SupabaseSync", "pull $table: chapter id $remoteChapterId of manga $mangaId kept as pushed; no stored chapter carries its url")
         }
+        return resolved ?: remoteChapterId
     }
+
+    private suspend fun storedChapterUrlsOf(mangaId: String): Set<String> =
+        storedChapterUrlsByManga.getOrPut(mangaId) {
+            storedChapterUrls(mangaDao.find(mangaId)?.chapters.orEmpty())
+        }
+
+    /**
+     * The rows to apply, with an aliased and an already-canonical row of the same manga collapsed
+     * onto the newest of the two. Backend row order is not a conflict policy.
+     */
+    private fun newestCanonicalJsonRows(rows: JSONArray, key: (JSONObject) -> String): List<JSONObject> =
+        newestCanonicalJsonRows(rows, key, ::isNewerRemoteRow)
+
+    private fun isNewerRemoteRow(candidate: JSONObject, incumbent: JSONObject): Boolean {
+        val left = aliasCandidate(candidate)
+        val right = aliasCandidate(incumbent)
+        return left != right && newestCanonicalAlias(listOf(left, right)) == left
+    }
+
+    private fun aliasCandidate(row: JSONObject): CanonicalAliasCandidate {
+        val remoteId = row.optString("manga_id", "").ifBlank { row.optString("id", "") }
+        return CanonicalAliasCandidate(
+            remoteId = remoteId,
+            canonicalId = canonicalPulledMangaId(remoteId),
+            updatedAt = parseEpochMilliOrZero(row.optString("updated_at", "")),
+            deletedAt = parseEpochMilliOrZero(row.optString("deleted_at", "")),
+        )
+    }
+
+    private fun parseEpochMilliOrZero(text: String): Long = runCatching { parseEpochMilli(text) }.getOrDefault(0L)
 
     private fun parseEpochMilli(text: String): Long {
         return runCatching { Instant.parse(text).toEpochMilli() }

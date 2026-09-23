@@ -9,18 +9,20 @@ import android.os.ParcelFileDescriptor
 import androidx.annotation.VisibleForTesting
 import com.google.common.io.ByteStreams
 import com.nyora.hasan72341.backups.data.BackupRepository
-import com.nyora.hasan72341.core.db.MangaDatabase
-import com.nyora.hasan72341.core.prefs.AppSettings
-import com.nyora.hasan72341.explore.data.MangaSourcesRepository
-import com.nyora.hasan72341.filter.data.SavedFiltersRepository
-import com.nyora.hasan72341.reader.data.TapGridSettings
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.io.FileDescriptor
 import java.io.FileInputStream
-import java.util.EnumSet
-import java.util.zip.ZipInputStream
-import java.util.zip.ZipOutputStream
+
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface AppBackupAgentEntryPoint {
+	fun backupRepository(): BackupRepository
+}
 
 class AppBackupAgent : BackupAgent() {
 
@@ -37,24 +39,9 @@ class AppBackupAgent : BackupAgent() {
 	) = Unit
 
 	override fun onFullBackup(data: FullBackupDataOutput) {
-		super.onFullBackup(data)
-
 		val file = createBackupFile(
 			this,
-			BackupRepository(
-				database = MangaDatabase(context = applicationContext),
-				settings = AppSettings(applicationContext),
-				tapGridSettings = TapGridSettings(applicationContext),
-				mangaSourcesRepository = MangaSourcesRepository(
-					context = applicationContext,
-					db = MangaDatabase(context = applicationContext),
-					settings = AppSettings(applicationContext),
-					catalogue = com.nyora.hasan72341.core.parser.datadriven.DataDrivenCatalogueRepository(applicationContext, okhttp3.OkHttpClient(), AppSettings(applicationContext)),
-				),
-				savedFiltersRepository = SavedFiltersRepository(
-					context = applicationContext,
-				),
-			),
+			createRepository(applicationContext),
 		)
 		try {
 			fullBackupFile(file, data)
@@ -71,26 +58,13 @@ class AppBackupAgent : BackupAgent() {
 		mode: Long,
 		mtime: Long
 	) {
-		if (destination?.name?.endsWith(".bk.zip") == true) {
+		if (NyoraBackupFiles.isSupported(destination?.name)) {
 			restoreBackupFile(
 				data.fileDescriptor,
 				size,
-				BackupRepository(
-					database = MangaDatabase(applicationContext),
-					settings = AppSettings(applicationContext),
-					tapGridSettings = TapGridSettings(applicationContext),
-					mangaSourcesRepository = MangaSourcesRepository(
-						context = applicationContext,
-						db = MangaDatabase(context = applicationContext),
-						settings = AppSettings(applicationContext),
-						catalogue = com.nyora.hasan72341.core.parser.datadriven.DataDrivenCatalogueRepository(applicationContext, okhttp3.OkHttpClient(), AppSettings(applicationContext)),
-					),
-					savedFiltersRepository = SavedFiltersRepository(
-						context = applicationContext,
-					),
-				),
+				createRepository(applicationContext),
 			)
-			destination.delete()
+			destination?.delete()
 		} else {
 			super.onRestoreFile(data, size, destination, type, mode, mtime)
 		}
@@ -99,7 +73,7 @@ class AppBackupAgent : BackupAgent() {
 	@VisibleForTesting
 	fun createBackupFile(context: Context, repository: BackupRepository): File {
 		val file = BackupUtils.createTempFile(context)
-		ZipOutputStream(file.outputStream()).use { output ->
+		file.outputStream().use { output ->
 			runBlocking {
 				repository.createBackup(output, null)
 			}
@@ -109,14 +83,15 @@ class AppBackupAgent : BackupAgent() {
 
 	@VisibleForTesting
 	fun restoreBackupFile(fd: FileDescriptor, size: Long, repository: BackupRepository) {
-		ZipInputStream(ByteStreams.limit(FileInputStream(fd), size)).use { input ->
-			val sections = EnumSet.allOf(BackupSection::class.java)
-			// managed externally
-			sections.remove(BackupSection.SETTINGS)
-			sections.remove(BackupSection.SETTINGS_READER_GRID)
+		ByteStreams.limit(FileInputStream(fd), size).use { input ->
 			runBlocking {
-				repository.restoreBackup(input, sections, null)
+				repository.restoreBackup(input)
 			}
 		}
+	}
+
+	private fun createRepository(context: Context): BackupRepository {
+		return EntryPointAccessors.fromApplication(context, AppBackupAgentEntryPoint::class.java)
+			.backupRepository()
 	}
 }

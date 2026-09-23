@@ -45,6 +45,7 @@ import com.nyora.hasan72341.databinding.ActivityImageBinding
 import com.nyora.hasan72341.databinding.ItemErrorStateBinding
 import javax.inject.Inject
 import androidx.appcompat.R as appcompatR
+import com.nyora.hasan72341.core.util.ext.contentInsetsType
 
 @AndroidEntryPoint
 class ImageActivity : BaseActivity<ActivityImageBinding>(),
@@ -107,7 +108,7 @@ class ImageActivity : BaseActivity<ActivityImageBinding>(),
 	}
 
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val typeMask = WindowInsetsCompat.Type.systemBars()
+		val typeMask = contentInsetsType
 		val barsInsets = insets.getInsets(typeMask)
 		val baseMargin = v.resources.getDimensionPixelOffset(R.dimen.screen_padding)
 		viewBinding.buttonMenu.updateLayoutParams<ViewGroup.MarginLayoutParams> {

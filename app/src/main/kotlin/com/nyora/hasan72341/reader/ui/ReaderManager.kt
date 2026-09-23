@@ -20,9 +20,20 @@ class ReaderManager(
 	private val fragmentManager: FragmentManager,
 	private val container: FragmentContainerView,
 	settings: AppSettings,
+	private val onReaderChanged: () -> Unit = {},
 ) {
 
 	private val modeMap = EnumMap<ReaderMode, Class<out BaseReaderFragment<*>>>(ReaderMode::class.java)
+
+	private var spineOffset = 0
+
+	/**
+	 * Whether the reader that is currently on screen lays pages out as spreads. This follows the
+	 * live fragment rather than the configured mode: webtoon and vertical readers are always single
+	 * column, even when double pages are enabled for landscape.
+	 */
+	val isDoublePageMode: Boolean
+		get() = currentReader is DoubleReaderFragment
 
 	init {
 		val useDoublePages = isLandscape() && settings.isReaderDoubleOnLandscape
@@ -43,7 +54,20 @@ class ReaderManager(
 		fragmentManager.commit {
 			setReorderingAllowed(true)
 			replace(container.id, readerClass, null, null)
+			runOnCommit {
+				currentReader?.setSpineOffset(spineOffset)
+				onReaderChanged()
+			}
 		}
+	}
+
+	/**
+	 * Width to keep clear at the gutter of a spread, remembered so that a reader created later
+	 * gets it too.
+	 */
+	fun setSpineOffset(px: Int) {
+		spineOffset = px
+		currentReader?.setSpineOffset(px)
 	}
 
 	fun setDoubleReaderMode(isEnabled: Boolean) {

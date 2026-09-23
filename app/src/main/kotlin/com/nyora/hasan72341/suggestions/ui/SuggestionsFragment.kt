@@ -31,8 +31,8 @@ import coil3.compose.AsyncImage
 import dagger.hilt.android.AndroidEntryPoint
 import com.nyora.hasan72341.core.nav.router
 import com.nyora.hasan72341.core.ui.BaseFragment
-import com.nyora.hasan72341.core.util.ext.consumeAllSystemBarsInsets
-import com.nyora.hasan72341.core.util.ext.systemBarsInsets
+import com.nyora.hasan72341.core.util.ext.consumeAllContentInsets
+import com.nyora.hasan72341.core.util.ext.contentInsets
 import com.nyora.hasan72341.databinding.FragmentComposeBinding
 import com.nyora.hasan72341.suggestions.domain.MangaSuggestionV2
 import com.nyora.hasan72341.mihon.parsers.model.Manga
@@ -68,14 +68,14 @@ class SuggestionsFragment : BaseFragment<FragmentComposeBinding>() {
     }
 
     override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-        val barsInsets = insets.systemBarsInsets
+        val barsInsets = insets.contentInsets
         viewBinding?.composeView?.updatePadding(
             left = barsInsets.left,
             top = barsInsets.top,
             right = barsInsets.right,
             bottom = barsInsets.bottom,
         )
-        return insets.consumeAllSystemBarsInsets()
+        return insets.consumeAllContentInsets()
     }
 
     @OptIn(ExperimentalMaterial3Api::class)

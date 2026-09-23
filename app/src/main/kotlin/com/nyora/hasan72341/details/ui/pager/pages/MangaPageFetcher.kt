@@ -20,6 +20,7 @@ import okio.Path.Companion.toOkioPath
 import com.nyora.hasan72341.core.model.MangaSource
 import com.nyora.hasan72341.core.network.MangaHttpClient
 import com.nyora.hasan72341.core.network.imageproxy.ImageProxyInterceptor
+import com.nyora.hasan72341.core.parser.MangaPageRequest
 import com.nyora.hasan72341.core.parser.MangaRepository
 import com.nyora.hasan72341.core.util.MimeTypes
 import com.nyora.hasan72341.core.util.ext.fetch
@@ -53,7 +54,8 @@ class MangaPageFetcher(
 			}
 		}
 		val repo = mangaRepositoryFactory.create(MangaSource(page.source?.name))
-		val pageUrl = repo.getPageUrl(page)
+		val pageRequest = repo.getPageRequest(page)
+		val pageUrl = pageRequest.url
 		if (options.diskCachePolicy.readEnabled) {
 			pagesCache[pageUrl]?.let { file ->
 				return SourceFetchResult(
@@ -63,17 +65,19 @@ class MangaPageFetcher(
 				)
 			}
 		}
-		return loadPage(pageUrl)
+		return loadPage(pageRequest)
 	}
 
-	private suspend fun loadPage(pageUrl: String): FetchResult? = if (pageUrl.toUri().isNetworkUri()) {
-		fetchPage(pageUrl)
-	} else {
-		imageLoader.fetch(pageUrl, options)
-	}
+	private suspend fun loadPage(pageRequest: MangaPageRequest): FetchResult? =
+		if (pageRequest.url.toUri().isNetworkUri()) {
+			fetchPage(pageRequest)
+		} else {
+			imageLoader.fetch(pageRequest.url, options)
+		}
 
-	private suspend fun fetchPage(pageUrl: String): FetchResult {
-		val request = PageLoader.createPageRequest(pageUrl, page.headers)
+	private suspend fun fetchPage(pageRequest: MangaPageRequest): FetchResult {
+		val pageUrl = pageRequest.url
+		val request = PageLoader.createPageRequest(pageUrl, pageRequest.headers)
 		return imageProxyInterceptor.interceptPageRequest(request, okHttpClient).use { response ->
 			if (!response.isSuccessful) {
 				throw HttpException(response.toNetworkResponse())

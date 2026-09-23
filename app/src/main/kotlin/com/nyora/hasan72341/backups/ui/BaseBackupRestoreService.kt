@@ -8,6 +8,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.PendingIntentCompat
 import androidx.core.app.ShareCompat
 import com.nyora.hasan72341.R
+import com.nyora.hasan72341.backups.domain.NyoraBackupFiles
 import com.nyora.hasan72341.core.ErrorReporterReceiver
 import com.nyora.hasan72341.core.nav.AppRouter
 import com.nyora.hasan72341.core.ui.CoroutineIntentService
@@ -99,7 +100,7 @@ abstract class BaseBackupRestoreService : CoroutineIntentService() {
 		if (!isRestoreService && fileUri != null) {
 			val shareIntent = ShareCompat.IntentBuilder(this@BaseBackupRestoreService)
 				.setStream(fileUri)
-				.setType("application/zip")
+				.setType(NyoraBackupFiles.MIME_TYPE)
 				.setChooserTitle(R.string.share_backup)
 				.createChooserIntent()
 			notification.addAction(

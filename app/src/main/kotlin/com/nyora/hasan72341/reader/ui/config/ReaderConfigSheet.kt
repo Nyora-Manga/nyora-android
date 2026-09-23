@@ -26,6 +26,7 @@ import com.nyora.hasan72341.core.prefs.AppSettings
 import com.nyora.hasan72341.core.prefs.ReaderMode
 import com.nyora.hasan72341.core.ui.sheet.BaseAdaptiveSheet
 import com.nyora.hasan72341.core.util.ext.consume
+import com.nyora.hasan72341.core.util.ext.contentInsetsType
 import com.nyora.hasan72341.core.util.ext.findParentCallback
 import com.nyora.hasan72341.core.util.ext.observe
 import com.nyora.hasan72341.core.util.ext.setValueRounded
@@ -145,7 +146,7 @@ class ReaderConfigSheet :
     }
 
     override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-        val typeMask = WindowInsetsCompat.Type.systemBars()
+        val typeMask = contentInsetsType
         viewBinding?.scrollView?.updatePadding(
             bottom = insets.getInsets(typeMask).bottom,
         )

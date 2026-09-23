@@ -6,7 +6,7 @@ import android.content.Context
  * Runtime side of the domain obfuscation (see buildSrc/DomainObfuscator.kt).
  *
  * The release build's ASM instrumentation rewrites every baked domain string constant into a call to
- * [d]. This loads the XOR-encrypted `dv.bin` asset once ([init], from Application.onCreate) and hands
+ * [d]. This loads the XOR-encrypted `dv.bin` asset once ([init], from Application.attachBaseContext) and hands
  * back the plain domain by index. Obfuscation, not security: the string is plaintext once returned —
  * this only stops static `strings`/apktool extraction, which is the Play-scan concern.
  */
@@ -21,11 +21,14 @@ object DomainVault {
     @Volatile
     private var table: Array<String> = emptyArray()
 
-    /** Load + decrypt the table once. Safe to call repeatedly. */
+    /**
+     * Load + decrypt the table once. Safe to call repeatedly. Reads [context]'s own assets: during
+     * Application.attachBaseContext the application context is not attached yet.
+     */
     fun init(context: Context) {
         if (table.isNotEmpty()) return
         val bytes = runCatching {
-            context.applicationContext.assets.open("dv.bin").use { it.readBytes() }
+            context.assets.open("dv.bin").use { it.readBytes() }
         }.getOrNull() ?: return
         table = parse(bytes)
     }
