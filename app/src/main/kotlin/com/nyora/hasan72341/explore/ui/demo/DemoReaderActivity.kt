@@ -13,7 +13,7 @@ import androidx.core.view.updatePadding
 import com.google.android.material.card.MaterialCardView
 import dagger.hilt.android.AndroidEntryPoint
 import com.nyora.hasan72341.core.ui.BaseActivity
-import com.nyora.hasan72341.core.util.ext.systemBarsInsets
+import com.nyora.hasan72341.core.util.ext.contentInsets
 import com.nyora.hasan72341.databinding.ActivityDemoReaderBinding
 
 @AndroidEntryPoint
@@ -31,7 +31,7 @@ class DemoReaderActivity : BaseActivity<ActivityDemoReaderBinding>() {
 	}
 
 	override fun onApplyWindowInsets(v: View, insets: WindowInsetsCompat): WindowInsetsCompat {
-		val barsInsets = insets.systemBarsInsets
+		val barsInsets = insets.contentInsets
 		viewBinding.toolbar.updateLayoutParams<ViewGroup.MarginLayoutParams> {
 			topMargin = barsInsets.top
 		}
