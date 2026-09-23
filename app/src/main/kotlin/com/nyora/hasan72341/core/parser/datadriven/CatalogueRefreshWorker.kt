@@ -12,6 +12,7 @@ import androidx.work.WorkerParameters
 import com.nyora.hasan72341.BuildConfig
 import com.nyora.hasan72341.core.network.BaseHttpClient
 import com.nyora.hasan72341.core.util.ext.printStackTraceDebug
+import com.nyora.hasan72341.explore.data.MangaSourcesRepository
 import com.nyora.hasan72341.mihon.parsers.util.runCatchingCancellable
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -31,6 +32,10 @@ import java.util.concurrent.TimeUnit
  * it) and hands it to [DataDrivenCatalogue.replace], which swaps the snapshot only when the
  * download parses and differs from the catalogue already serving. A failed refresh therefore leaves
  * the previous catalogue serving every source, and a refresh can never fall back to another branch.
+ *
+ * After a swap the source table is reconciled at once, so rows the new catalogue adds reach the
+ * source list (default-enabled per the onboarding language choice) and rows it retired leave it,
+ * without waiting for the next launch.
  */
 @HiltWorker
 class CatalogueRefreshWorker @AssistedInject constructor(
@@ -38,10 +43,11 @@ class CatalogueRefreshWorker @AssistedInject constructor(
 	@Assisted workerParams: WorkerParameters,
 	private val catalogue: DataDrivenCatalogue,
 	@BaseHttpClient private val httpClient: OkHttpClient,
+	private val sourcesRepository: MangaSourcesRepository,
 ) : CoroutineWorker(context, workerParams) {
 
 	override suspend fun doWork(): Result = runCatchingCancellable {
-		refresh(httpClient, catalogue)
+		refresh(httpClient, catalogue, sourcesRepository)
 	}.onFailure {
 		it.printStackTraceDebug(TAG)
 	}.fold(
@@ -58,6 +64,8 @@ class CatalogueRefreshWorker @AssistedInject constructor(
 
 		@BaseHttpClient
 		fun baseHttpClient(): OkHttpClient
+
+		fun mangaSourcesRepository(): MangaSourcesRepository
 	}
 
 	companion object {
@@ -109,20 +117,25 @@ class CatalogueRefreshWorker @AssistedInject constructor(
 		suspend fun runNow(context: Context): kotlin.Result<Int> {
 			val dependencies = EntryPointAccessors.fromApplication<Dependencies>(context.applicationContext)
 			return runCatchingCancellable {
-				refresh(dependencies.baseHttpClient(), dependencies.dataDrivenCatalogue())
+				refresh(dependencies.baseHttpClient(), dependencies.dataDrivenCatalogue(), dependencies.mangaSourcesRepository())
 			}
 		}
 
-		private suspend fun refresh(httpClient: OkHttpClient, catalogue: DataDrivenCatalogue): Int =
-			withContext(Dispatchers.IO) {
-				val request = Request.Builder()
-					.url(CATALOGUE_URL)
-					.build()
-				val body = httpClient.newCall(request).execute().use { response ->
-					check(response.isSuccessful) { "HTTP ${response.code} fetching the source catalogue" }
-					response.body?.string().orEmpty()
-				}
-				catalogue.replace(body)
+		private suspend fun refresh(
+			httpClient: OkHttpClient,
+			catalogue: DataDrivenCatalogue,
+			sourcesRepository: MangaSourcesRepository,
+		): Int = withContext(Dispatchers.IO) {
+			val request = Request.Builder()
+				.url(CATALOGUE_URL)
+				.build()
+			val body = httpClient.newCall(request).execute().use { response ->
+				check(response.isSuccessful) { "HTTP ${response.code} fetching the source catalogue" }
+				response.body?.string().orEmpty()
 			}
+			val count = catalogue.replace(body)
+			sourcesRepository.assimilateFromCatalogue()
+			count
+		}
 	}
 }

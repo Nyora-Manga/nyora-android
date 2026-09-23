@@ -273,12 +273,15 @@ class MangaSourcesRepository @Inject constructor(
 		return added || removed
 	}
 
-	// Delete DB rows for sources that are neither native nor present in the current catalogue, e.g.
-	// after a catalogue refresh retires them. Their user state (enabled/pinned/sort) is
-	// intentionally dropped; a source that later reappears comes back fresh.
+	// Delete DB rows for catalogue sources the current catalogue no longer contains, e.g. after a
+	// refresh retires them. Their user state (enabled/pinned/sort) is intentionally dropped; a
+	// source that later reappears comes back fresh. Rows of other kinds (`content:` providers) are
+	// not the catalogue's to prune.
 	private suspend fun pruneOrphanedSources(): Boolean {
 		val valid = allMangaSources.mapToSet { it.name }
-		val orphans = dao.findAll().mapNotNull { it.source.takeIf { name -> name !in valid } }
+		val orphans = dao.findAll().mapNotNull { entity ->
+			entity.source.takeIf { name -> name.startsWith(DataDrivenMangaSource.PREFIX) && name !in valid }
+		}
 		if (orphans.isEmpty()) {
 			return false
 		}
