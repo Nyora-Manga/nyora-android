@@ -1,11 +1,50 @@
 package com.nyora.hasan72341.core.prefs
 
+import com.nyora.hasan72341.core.parser.datadriven.CatalogueCache
+import com.nyora.hasan72341.core.parser.datadriven.DataDrivenCatalogue
+import org.junit.Rule
+import org.junit.rules.TemporaryFolder
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RenamedPreferenceSourcesTest {
+
+	@get:Rule
+	val folder = TemporaryFolder()
+
+	@Test
+	fun parserPreferenceFilesFollowTheSameIdentityUpgradeAsStoredSources() {
+		val catalogue = DataDrivenCatalogue(
+			bundledAsset = { javaClass.getResource("/datadriven/catalogue-sample.json")!!.readBytes() },
+			cache = CatalogueCache(folder.root),
+			reportError = { throw it },
+		)
+		val moves = renamedPreferenceSources(
+			listOf("HIPERDEX.xml", "parser:KOMIKZOID.xml", "MANGAFIRE_EN.xml",
+				"ANILIST.xml", "LOCAL.xml", "MIHON_123.xml", "data:hiperdex.xml"),
+			catalogue,
+		).toMap()
+		assertEquals("data:hiperdex", moves["HIPERDEX"])
+		assertEquals("data:komikzoid", moves["parser:KOMIKZOID"])
+		assertEquals("data:mangafire_en", moves["MANGAFIRE_EN"])
+		for (untouched in listOf("ANILIST", "LOCAL", "MIHON_123", "data:hiperdex")) {
+			assertFalse(moves.containsKey(untouched))
+		}
+	}
+
+	@Test
+	fun parserPreferenceFilesAreNotGuessedWithoutACatalogue() {
+		val moves = renamedPreferenceSources(
+			listOf("HIPERDEX.xml", "parser:HIPERDEX.xml", "DD_HIPERDEX.xml"),
+			catalogue = null,
+		).toMap()
+		assertFalse(moves.containsKey("HIPERDEX"))
+		assertFalse(moves.containsKey("parser:HIPERDEX"))
+		assertEquals("data:hiperdex", moves["DD_HIPERDEX"])
+	}
+
 
 	/**
 	 * A v2.6-v2.7.3 install keeps its per-source settings in `DD_<catalogue id>.xml` and a v2.1.6
