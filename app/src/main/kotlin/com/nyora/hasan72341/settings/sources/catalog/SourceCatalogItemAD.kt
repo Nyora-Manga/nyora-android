@@ -1,5 +1,6 @@
 package com.nyora.hasan72341.settings.sources.catalog
 
+import androidx.appcompat.widget.TooltipCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import androidx.core.view.updatePaddingRelative
@@ -47,7 +48,7 @@ fun sourceCatalogItemSourceAD(
 		)
 		val label = context.getString(if (isEnabled) R.string.remove else R.string.add)
 		binding.imageViewAdd.contentDescription = label
-		binding.imageViewAdd.tooltipText = label
+		TooltipCompat.setTooltipText(binding.imageViewAdd, label)
 	}
 
 	bind { payloads ->
