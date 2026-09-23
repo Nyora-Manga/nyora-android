@@ -261,7 +261,7 @@ class MangaSourcesRepository @Inject constructor(
 
 	/**
 	 * Reconcile the DB with the runtime catalogue: insert not-yet-known sources and prune rows for
-	 * sources the (possibly newly-pasted) catalogue no longer contains. Call after a catalogue
+	 * sources the refreshed catalogue no longer contains. Call after a catalogue
 	 * refresh so the observing source list picks up the change without a relaunch. Forces a re-scan
 	 * (unlike the `onStart` fast path) because a swapped catalogue can have the same source count.
 	 */
@@ -274,7 +274,7 @@ class MangaSourcesRepository @Inject constructor(
 	}
 
 	// Delete DB rows for sources that are neither native nor present in the current catalogue, e.g.
-	// after the user pastes a different catalogue URL. Their user state (enabled/pinned/sort) is
+	// after a catalogue refresh retires them. Their user state (enabled/pinned/sort) is
 	// intentionally dropped; a source that later reappears comes back fresh.
 	private suspend fun pruneOrphanedSources(): Boolean {
 		val valid = allMangaSources.mapToSet { it.name }

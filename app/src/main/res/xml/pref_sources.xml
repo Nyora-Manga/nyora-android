@@ -4,13 +4,6 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:title="@string/remote_sources">
 
-    <Preference
-        android:key="source_repository_url"
-        android:persistent="false"
-        android:title="@string/source_repository_title"
-        android:summary="@string/source_repository_summary"
-        app:allowDividerBelow="true" />
-
     <ListPreference
         android:key="sources_sort_order"
         android:title="@string/sort_order"

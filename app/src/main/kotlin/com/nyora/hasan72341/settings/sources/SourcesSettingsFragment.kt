@@ -63,9 +63,6 @@ class SourcesSettingsFragment : BasePreferenceFragment(R.string.remote_sources),
 				pref.isChecked = it
 			}
 		}
-		findPreference<Preference>(AppSettings.KEY_SOURCE_REPOSITORY_URL)?.let { pref ->
-			pref.summary = settings.sourceCatalogueUrl.ifEmpty { getString(R.string.source_repository_summary) }
-		}
 		updateEnableAllDependencies()
 		settings.subscribe(this)
 	}
@@ -75,18 +72,7 @@ class SourcesSettingsFragment : BasePreferenceFragment(R.string.remote_sources),
 		super.onDestroyView()
 	}
 
-	override fun onResume() {
-		super.onResume()
-		findPreference<Preference>(AppSettings.KEY_SOURCE_REPOSITORY_URL)?.summary =
-			settings.sourceCatalogueUrl.ifEmpty { getString(R.string.source_repository_summary) }
-	}
-
 	override fun onPreferenceTreeClick(preference: Preference): Boolean = when (preference.key) {
-		AppSettings.KEY_SOURCE_REPOSITORY_URL -> {
-			router.showAddSourceRepository()
-			true
-		}
-
 		AppSettings.KEY_SOURCES_CATALOG -> {
 			router.openSourcesCatalog()
 			true

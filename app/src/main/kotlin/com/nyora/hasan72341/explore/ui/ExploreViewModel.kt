@@ -197,7 +197,7 @@ class ExploreViewModel @Inject constructor(
 				icon = R.drawable.ic_empty_common,
 				textPrimary = R.string.no_manga_sources,
 				textSecondary = R.string.no_manga_sources_text,
-				actionStringRes = R.string.add_source_repository,
+				actionStringRes = R.string.catalog,
 			)
 		}
 		return result

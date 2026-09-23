@@ -154,7 +154,7 @@ class ExploreFragment :
 
 	override fun onRetryClick(error: Throwable) = Unit
 
-	override fun onEmptyActionClick() = router.showAddSourceRepository()
+	override fun onEmptyActionClick() = router.openSourcesCatalog()
 
 	override fun onSelectionChanged(controller: ListSelectionController, count: Int) {
 		viewBinding?.recyclerView?.invalidateItemDecorations()

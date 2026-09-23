@@ -64,7 +64,6 @@ class WelcomeActivity : BaseActivity<ActivityWelcomeBinding>(), ChipsView.OnChip
 		viewBinding.buttonSignIn.setOnClickListener(this)
 		viewBinding.buttonRegister.setOnClickListener(this)
 		viewBinding.buttonGuest.setOnClickListener(this)
-		viewBinding.buttonAddSources.setOnClickListener(this)
 		viewBinding.buttonDirectories.setOnClickListener(this)
 		viewBinding.buttonFinishSetup.setOnClickListener(this)
 
@@ -107,12 +106,6 @@ class WelcomeActivity : BaseActivity<ActivityWelcomeBinding>(), ChipsView.OnChip
 			R.id.button_guest -> {
 				viewBinding.viewFlipper.displayedChild = 1 // Go to step 2
 				viewBinding.headerTitle.setText(R.string.welcome_sources_title)
-			}
-
-			R.id.button_add_sources -> {
-				// Onboarding ships source-less; let the user paste their catalogue URL right here so
-				// the language choice they just made is applied to the sources that load.
-				router.showAddSourceRepository()
 			}
 
 			R.id.button_directories -> {
