@@ -1,10 +1,17 @@
 package com.nyora.hasan72341.core.db.migrations
 
+import com.nyora.hasan72341.core.parser.datadriven.CatalogueCache
+import com.nyora.hasan72341.core.parser.datadriven.DataDrivenCatalogue
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 
 class StoredSourceUpgradeTest {
+
+	@get:Rule
+	val folder = TemporaryFolder()
 
 	/**
 	 * The shipped v2.6-v2.7.3 builds stored `DD_<catalogue id>` in the catalogue's own casing, bare
@@ -47,9 +54,47 @@ class StoredSourceUpgradeTest {
 		assertEquals("data:bananascan_com", upgradedStoredSourceName("data:bananascan-com"))
 	}
 
+	/**
+	 * Other Nyora clients synced the Kotatsu parser token, prefixed or bare and in either case; it
+	 * lands on the catalogue row of that id, and only on one the catalogue lists.
+	 */
+	@Test
+	fun parserTokensResolveToTheCatalogueRowThatClaimsThem() {
+		val catalogue = sampleCatalogue()
+		assertEquals("data:hiperdex", upgradedStoredSourceName("parser:HIPERDEX", catalogue))
+		assertEquals("data:hiperdex", upgradedStoredSourceName("parser:hiperdex", catalogue))
+		assertEquals("data:hiperdex", upgradedStoredSourceName("HIPERDEX", catalogue))
+		assertEquals("data:hiperdex", upgradedStoredSourceName("{\"name\":\"parser:HIPERDEX\"}", catalogue))
+		assertEquals("data:komikzoid", upgradedStoredSourceName("KOMIKZOID", catalogue))
+		assertEquals("data:mangafire_en", upgradedStoredSourceName("MANGAFIRE_EN", catalogue))
+		assertEquals("data:mangafire_en", upgradedStoredSourceName("parser:mangafire-en", catalogue))
+		assertNull(upgradedStoredSourceName("parser:MANGADEX", catalogue))
+		assertNull(upgradedStoredSourceName("ANILIST", catalogue))
+		assertNull(upgradedStoredSourceName("LOCAL", catalogue))
+		assertNull(upgradedStoredSourceName("MIHON_123", catalogue))
+	}
+
+	/** Without a catalogue to ask, a parser token is left as it is rather than guessed at. */
+	@Test
+	fun parserTokensAreNotGuessedWithoutACatalogue() {
+		assertNull(upgradedStoredSourceName("parser:HIPERDEX", catalogue = null))
+		assertNull(upgradedStoredSourceName("HIPERDEX", catalogue = null))
+		assertNull(upgradedStoredSourceName("hiperdex", catalogue = null))
+		// The shipped spellings never needed the catalogue and still do not.
+		assertEquals("data:hiperdex", upgradedStoredSourceName("DD_HIPERDEX", catalogue = null))
+		assertEquals("data:hiperdex", upgradedStoredSourceName("JS_HIPERDEX", catalogue = null))
+	}
+
 	@Test
 	fun mangaIdsRekeyToTheLegacyHash() {
 		assertEquals("3412299933579011492", upgradedMangaId("data:mangadex", "/title/abc"))
 		assertEquals("3717704593480770000", upgradedMangaId("data:asurascans", "https://asurascans.com/comics/solo-leveling"))
 	}
+
+	/** The parser tests' sample catalogue: `data:hiperdex`, `data:komikzoid` and `data:mangafire_en` are browsable. */
+	private fun sampleCatalogue() = DataDrivenCatalogue(
+		bundledAsset = { javaClass.getResource("/datadriven/catalogue-sample.json")!!.readBytes() },
+		cache = CatalogueCache(folder.root),
+		reportError = { throw it },
+	)
 }

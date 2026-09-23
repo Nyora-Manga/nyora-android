@@ -1,9 +1,11 @@
 package com.nyora.hasan72341.core.db.migrations
 
 import com.nyora.hasan72341.core.model.DataDrivenMangaSource
+import com.nyora.hasan72341.core.parser.datadriven.DataDrivenCatalogue
 import com.nyora.hasan72341.core.parser.datadriven.LEGACY_SOURCE_RENAMES
 import com.nyora.hasan72341.core.parser.datadriven.canonicalDataSourceId
 import com.nyora.hasan72341.core.parser.datadriven.decodeStoredSourceName
+import com.nyora.hasan72341.core.parser.datadriven.findCanonical
 import com.nyora.hasan72341.core.parser.datadriven.stableMangaId
 
 /**
@@ -15,6 +17,9 @@ import com.nyora.hasan72341.core.parser.datadriven.stableMangaId
  * the catalogue's own casing, bare in `sources` and wrapped as `{"name":"..."}` in `manga.source`.
  * Schema 33 never shipped, so this upgrade is the one place both shapes are retired, and both have
  * to land on the same `data:` spelling or the same site would read as two sources.
+ *
+ * Other Nyora clients synced the Kotatsu parser token of a source, prefixed (`parser:MANGADEX`) or
+ * bare (`MANGADEX`); those land on the catalogue row of the same id when the catalogue lists one.
  */
 
 /** Source prefix written by the JavaScript bundle that v2.1.6 shipped. */
@@ -23,12 +28,29 @@ private const val JAVASCRIPT_PREFIX = "JS_"
 /** Source prefix written by the data-driven builds v2.6 to v2.7.3 shipped. */
 private const val SHIPPED_DATA_DRIVEN_PREFIX = "DD_"
 
+/** Prefix other Nyora clients put on a Kotatsu parser token when they sync it. */
+private const val PARSER_PREFIX = "parser:"
+
+/** A bare Kotatsu parser token as other clients synced it: `MANGADEX`, `MANGAFIRE_EN`. */
+private val PARSER_TOKEN = Regex("[A-Z][A-Z0-9_]*")
+
+/** Upper-case identities that are not parser tokens. */
+private val NON_SOURCE_TOKENS = setOf("LOCAL", "UNKNOWN", "TEST")
+
 /**
  * The canonical `data:` identity of a stored source name, or null when the name is not a source
  * this upgrade owns: `LOCAL` and `UNKNOWN` keep working as they are, and the Mihon and numeric
  * identities are left to the purge that retires them.
+ *
+ * A parser token resolves only through [catalogue]: it is a source of this app when a catalogue
+ * row claims it, and a guess without the catalogue would turn a tracker's or a foreign parser's
+ * token into a `data:` identity nothing can browse. The live catalogue is the default; tests and
+ * call sites that run before Hilt built it pass their own or null.
  */
-internal fun upgradedStoredSourceName(raw: String): String? {
+internal fun upgradedStoredSourceName(
+	raw: String,
+	catalogue: DataDrivenCatalogue? = DataDrivenCatalogue.instance,
+): String? {
 	val name = decodeStoredSourceName(raw)
 	val storedId = when {
 		name.startsWith(SHIPPED_DATA_DRIVEN_PREFIX) -> name.removePrefix(SHIPPED_DATA_DRIVEN_PREFIX)
@@ -39,10 +61,28 @@ internal fun upgradedStoredSourceName(raw: String): String? {
 			.removePrefix(DataDrivenMangaSource.PREFIX)
 			.replace('_', '-')
 		name.startsWith(DataDrivenMangaSource.PREFIX) -> name.removePrefix(DataDrivenMangaSource.PREFIX)
+		name.startsWith(PARSER_PREFIX) -> return catalogueSourceForParserToken(name.removePrefix(PARSER_PREFIX), catalogue)
+		isParserToken(name) -> return catalogueSourceForParserToken(name, catalogue)
 		else -> return null
 	}
 	val upgraded = DataDrivenMangaSource.PREFIX + canonicalDataSourceId(storedId)
 	return LEGACY_SOURCE_RENAMES[upgraded] ?: upgraded
+}
+
+private fun isParserToken(name: String): Boolean =
+	name !in NON_SOURCE_TOKENS && !name.startsWith("MIHON_") && PARSER_TOKEN.matches(name)
+
+/**
+ * The catalogue row [token] names, tried as spelled and with the `-` delimiters the catalogue
+ * prefers where the parser enum spelled `_`; null without a catalogue or when no row claims it.
+ */
+private fun catalogueSourceForParserToken(token: String, catalogue: DataDrivenCatalogue?): String? {
+	if (token.isEmpty() || catalogue == null) return null
+	val lower = token.lowercase()
+	return sequenceOf(lower, lower.replace('_', '-'))
+		.distinct()
+		.mapNotNull { catalogue.findCanonical(DataDrivenMangaSource.PREFIX + it)?.name }
+		.firstOrNull()
 }
 
 /**
