@@ -104,6 +104,6 @@ class MangaBakaMetaRepository @Inject constructor(
 		}
 
 	private companion object {
-		const val SEARCH_URL = "https://api.mangabaka.dev/v1/series/search"
+		const val SEARCH_URL = "https://api.mangabaka.org/v1/series/search"
 	}
 }
